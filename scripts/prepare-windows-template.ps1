@@ -132,28 +132,54 @@ try {
     }
 
     # Step 2: Install PowerShell 7
-    Write-Log "Installing PowerShell 7..."
+    Write-Log "Checking PowerShell 7 installation..."
     try {
-        $ps7Url = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
-        $ps7Installer = "$env:TEMP\PowerShell-7.4.0-win-x64.msi"
-        
-        Invoke-WebRequest -Uri $ps7Url -OutFile $ps7Installer
-        Start-Process msiexec.exe -ArgumentList "/i `"$ps7Installer`" /quiet" -Wait
-        
-        # Add PowerShell 7 to PATH
         $pwshPath = "C:\Program Files\PowerShell\7"
-        $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-        if ($currentPath -notlike "*$pwshPath*") {
-            $newPath = "$currentPath;$pwshPath"
-            [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
-            Write-Log "PowerShell 7 added to PATH" "SUCCESS"
-        }
+        $pwshExe = "$pwshPath\pwsh.exe"
         
-        # Verify installation
-        & "C:\Program Files\PowerShell\7\pwsh.exe" -Version
-        Write-Log "PowerShell 7 installed successfully" "SUCCESS"
+        # Check if PowerShell 7 is already installed
+        if (Test-Path $pwshExe) {
+            # Get the version to verify it's working
+            $version = & $pwshExe -Command '$PSVersionTable.PSVersion.ToString()' 2>$null
+            if ($version) {
+                Write-Log "PowerShell 7 is already installed (version: $version)" "SUCCESS"
+                
+                # Ensure it's in PATH
+                $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+                if ($currentPath -notlike "*$pwshPath*") {
+                    $newPath = "$currentPath;$pwshPath"
+                    [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
+                    Write-Log "PowerShell 7 added to PATH" "SUCCESS"
+                } else {
+                    Write-Log "PowerShell 7 is already in PATH" "SUCCESS"
+                }
+            } else {
+                Write-Log "PowerShell 7 executable found but not working properly, reinstalling..." "WARNING"
+                throw "PowerShell 7 not functional"
+            }
+        } else {
+            Write-Log "PowerShell 7 not found, installing..."
+            
+            $ps7Url = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
+            $ps7Installer = "$env:TEMP\PowerShell-7.4.0-win-x64.msi"
+            
+            Invoke-WebRequest -Uri $ps7Url -OutFile $ps7Installer
+            Start-Process msiexec.exe -ArgumentList "/i `"$ps7Installer`" /quiet" -Wait
+            
+            # Add PowerShell 7 to PATH
+            $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+            if ($currentPath -notlike "*$pwshPath*") {
+                $newPath = "$currentPath;$pwshPath"
+                [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
+                Write-Log "PowerShell 7 added to PATH" "SUCCESS"
+            }
+            
+            # Verify installation
+            & $pwshExe -Version
+            Write-Log "PowerShell 7 installed successfully" "SUCCESS"
+        }
     } catch {
-        Write-Log "Failed to install PowerShell 7: $($_.Exception.Message)" "ERROR"
+        Write-Log "Failed to install/verify PowerShell 7: $($_.Exception.Message)" "ERROR"
         throw
     }
 
