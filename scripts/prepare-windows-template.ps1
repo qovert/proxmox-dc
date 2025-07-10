@@ -32,6 +32,145 @@ function Test-InternetConnection {
     }
 }
 
+# Function to install MSI packages
+function Install-MsiPackage {
+    param(
+        [string]$InstallerPath,
+        [string]$PackageName,
+        [string[]]$Arguments = @("/quiet"),
+        [int]$WaitSeconds = 5
+    )
+    
+    try {
+        Write-Log "Installing $PackageName..."
+        $argString = "/i `"$InstallerPath`" " + ($Arguments -join " ")
+        Start-Process msiexec.exe -ArgumentList $argString -Wait
+        
+        if ($WaitSeconds -gt 0) {
+            Start-Sleep -Seconds $WaitSeconds
+        }
+        
+        Write-Log "$PackageName installed successfully" "SUCCESS"
+        return $true
+    } catch {
+        Write-Log "Failed to install $PackageName`: $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+}
+
+# Function to manage PATH environment variable
+function Add-ToPath {
+    param(
+        [string]$PathToAdd,
+        [string]$Description = "Path"
+    )
+    
+    try {
+        $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+        if ($currentPath -notlike "*$PathToAdd*") {
+            $newPath = "$currentPath;$PathToAdd"
+            [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
+            Write-Log "$Description added to PATH" "SUCCESS"
+            return $true
+        } else {
+            Write-Log "$Description is already in PATH" "SUCCESS"
+            return $true
+        }
+    } catch {
+        Write-Log "Failed to add $Description to PATH: $($_.Exception.Message)" "WARNING"
+        return $false
+    }
+}
+
+# Function to configure and start a service
+function Set-ServiceConfiguration {
+    param(
+        [string]$ServiceName,
+        [string]$StartupType = "Automatic",
+        [bool]$StartService = $true,
+        [string]$Description = ""
+    )
+    
+    try {
+        $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if ($service) {
+            Set-Service -Name $ServiceName -StartupType $StartupType
+            if ($StartService -and $service.Status -ne "Running") {
+                Start-Service -Name $ServiceName
+            }
+            $desc = if ($Description) { $Description } else { $ServiceName }
+            Write-Log "$desc service configured and started" "SUCCESS"
+            return $true
+        } else {
+            Write-Log "Service '$ServiceName' not found" "WARNING"
+            return $false
+        }
+    } catch {
+        Write-Log "Failed to configure service '$ServiceName': $($_.Exception.Message)" "WARNING"
+        return $false
+    }
+}
+
+# Function to manage SSH public keys
+function Set-SSHPublicKey {
+    param(
+        [string]$PublicKey,
+        [string]$AuthorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
+    )
+    
+    if (-not $PublicKey) {
+        return $true
+    }
+    
+    try {
+        # Ensure the authorized_keys file exists
+        if (-not (Test-Path $AuthorizedKeysPath)) {
+            New-Item -ItemType File -Path $AuthorizedKeysPath -Force | Out-Null
+            icacls $AuthorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
+            Write-Log "Created SSH authorized_keys file" "SUCCESS"
+        }
+        
+        # Check if key already exists
+        $existingKeys = Get-Content $AuthorizedKeysPath -ErrorAction SilentlyContinue
+        if ($existingKeys -notcontains $PublicKey) {
+            Add-Content -Path $AuthorizedKeysPath -Value $PublicKey
+            Write-Log "SSH public key added to authorized_keys" "SUCCESS"
+        } else {
+            Write-Log "SSH public key already exists in authorized_keys" "SUCCESS"
+        }
+        
+        return $true
+    } catch {
+        Write-Log "Failed to configure SSH public key: $($_.Exception.Message)" "WARNING"
+        return $false
+    }
+}
+
+# Function to download files with retry logic
+function Get-FileFromUrl {
+    param(
+        [string]$Url,
+        [string]$OutputPath,
+        [int]$MaxRetries = 3
+    )
+    
+    for ($i = 1; $i -le $MaxRetries; $i++) {
+        try {
+            Write-Log "Downloading from $Url (attempt $i/$MaxRetries)..."
+            Invoke-WebRequest -Uri $Url -OutFile $OutputPath -UseBasicParsing
+            Write-Log "Download completed successfully" "SUCCESS"
+            return $true
+        } catch {
+            if ($i -eq $MaxRetries) {
+                Write-Log "Failed to download after $MaxRetries attempts: $($_.Exception.Message)" "ERROR"
+                return $false
+            }
+            Write-Log "Download attempt $i failed, retrying..." "WARNING"
+            Start-Sleep -Seconds 5
+        }
+    }
+}
+
 Write-Log "Starting Windows Server 2025 Template Preparation" "SUCCESS"
 Write-Log "Script parameters: SkipWindowsUpdates=$SkipWindowsUpdates, SkipCloudbaseInit=$SkipCloudbaseInit, SkipSysprep=$SkipSysprep"
 
@@ -51,15 +190,7 @@ try {
         
         if ($qemuGAService -or (Test-Path $qemuGAPath)) {
             Write-Log "QEMU Guest Agent is already installed" "SUCCESS"
-            
-            # Ensure service is running and set to automatic
-            if ($qemuGAService) {
-                Set-Service -Name "QEMU-GA" -StartupType Automatic
-                if ($qemuGAService.Status -ne "Running") {
-                    Start-Service -Name "QEMU-GA"
-                    Write-Log "QEMU Guest Agent service started" "SUCCESS"
-                }
-            }
+            Set-ServiceConfiguration -ServiceName "QEMU-GA" -Description "QEMU Guest Agent"
         } else {
             # Check if guest agent installer is available on mounted CD-ROM
             $cdDrives = Get-WmiObject -Class Win32_LogicalDisk | Where-Object { $_.DriveType -eq 5 }
@@ -90,22 +221,11 @@ try {
                     Start-Process -FilePath $guestAgentInstaller -ArgumentList "/S" -Wait
                 } else {
                     # Install legacy MSI
-                    Write-Log "Installing legacy QEMU guest agent..."
-                    Start-Process msiexec.exe -ArgumentList "/i `"$guestAgentInstaller`" /quiet" -Wait
+                    Install-MsiPackage -InstallerPath $guestAgentInstaller -PackageName "QEMU Guest Agent" -WaitSeconds 10
                 }
                 
-                # Wait a moment for installation to complete
-                Start-Sleep -Seconds 10
-                
-                # Start the service
-                $qemuGAService = Get-Service -Name "QEMU-GA" -ErrorAction SilentlyContinue
-                if ($qemuGAService) {
-                    Set-Service -Name "QEMU-GA" -StartupType Automatic
-                    Start-Service -Name "QEMU-GA"
-                    Write-Log "QEMU Guest Agent installed and started successfully" "SUCCESS"
-                } else {
-                    Write-Log "QEMU Guest Agent service not found after installation" "WARNING"
-                }
+                # Configure the service
+                Set-ServiceConfiguration -ServiceName "QEMU-GA" -Description "QEMU Guest Agent"
             } else {
                 Write-Log "Guest agent installer not found on any mounted CD-ROM" "WARNING"
                 Write-Log "Please ensure virtio-win ISO or Proxmox VE ISO is mounted" "WARNING"
@@ -143,16 +263,7 @@ try {
             $version = & $pwshExe -Command '$PSVersionTable.PSVersion.ToString()' 2>$null
             if ($version) {
                 Write-Log "PowerShell 7 is already installed (version: $version)" "SUCCESS"
-                
-                # Ensure it's in PATH
-                $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-                if ($currentPath -notlike "*$pwshPath*") {
-                    $newPath = "$currentPath;$pwshPath"
-                    [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
-                    Write-Log "PowerShell 7 added to PATH" "SUCCESS"
-                } else {
-                    Write-Log "PowerShell 7 is already in PATH" "SUCCESS"
-                }
+                Add-ToPath -PathToAdd $pwshPath -Description "PowerShell 7"
             } else {
                 Write-Log "PowerShell 7 executable found but not working properly, reinstalling..." "WARNING"
                 throw "PowerShell 7 not functional"
@@ -163,20 +274,15 @@ try {
             $ps7Url = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/PowerShell-7.4.0-win-x64.msi"
             $ps7Installer = "$env:TEMP\PowerShell-7.4.0-win-x64.msi"
             
-            Invoke-WebRequest -Uri $ps7Url -OutFile $ps7Installer
-            Start-Process msiexec.exe -ArgumentList "/i `"$ps7Installer`" /quiet" -Wait
-            
-            # Add PowerShell 7 to PATH
-            $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-            if ($currentPath -notlike "*$pwshPath*") {
-                $newPath = "$currentPath;$pwshPath"
-                [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
-                Write-Log "PowerShell 7 added to PATH" "SUCCESS"
+            if (Get-FileFromUrl -Url $ps7Url -OutputPath $ps7Installer) {
+                if (Install-MsiPackage -InstallerPath $ps7Installer -PackageName "PowerShell 7") {
+                    Add-ToPath -PathToAdd $pwshPath -Description "PowerShell 7"
+                    
+                    # Verify installation
+                    & $pwshExe -Version
+                    Write-Log "PowerShell 7 installed successfully" "SUCCESS"
+                }
             }
-            
-            # Verify installation
-            & $pwshExe -Version
-            Write-Log "PowerShell 7 installed successfully" "SUCCESS"
         }
     } catch {
         Write-Log "Failed to install/verify PowerShell 7: $($_.Exception.Message)" "ERROR"
@@ -197,23 +303,7 @@ try {
             Write-Log "SSH configuration file exists: $sshdConfigPath" "SUCCESS"
             
             # Add SSH public key if provided and not already present
-            if ($SSHPublicKey) {
-                $authorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
-                if (Test-Path $authorizedKeysPath) {
-                    $existingKeys = Get-Content $authorizedKeysPath -ErrorAction SilentlyContinue
-                    if ($existingKeys -notcontains $SSHPublicKey) {
-                        Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
-                        Write-Log "SSH public key added to existing authorized_keys" "SUCCESS"
-                    } else {
-                        Write-Log "SSH public key already exists in authorized_keys" "SUCCESS"
-                    }
-                } else {
-                    New-Item -ItemType File -Path $authorizedKeysPath -Force
-                    icacls $authorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
-                    Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
-                    Write-Log "SSH public key added to new authorized_keys file" "SUCCESS"
-                }
-            }
+            Set-SSHPublicKey -PublicKey $SSHPublicKey
         } else {
             Write-Log "OpenSSH Server not properly installed or configured, proceeding with installation..."
             
@@ -299,17 +389,7 @@ try {
             }
             
             # Configure SSH for key-based authentication
-            $authorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
-            New-Item -ItemType File -Path $authorizedKeysPath -Force
-            
-            # Set proper permissions
-            icacls $authorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
-            
-            # Add SSH public key if provided
-            if ($SSHPublicKey) {
-                Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
-                Write-Log "SSH public key added to authorized_keys" "SUCCESS"
-            }
+            Set-SSHPublicKey -PublicKey $SSHPublicKey
             
             # Configure SSH daemon
             $sshdConfig = @"
@@ -456,15 +536,13 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
                 $cloudbaseUrl = "https://cloudbase.it/downloads/CloudbaseInitSetup_1_1_4_x64.msi"
                 $cloudbaseInstaller = "$env:TEMP\CloudbaseInit.msi"
                 
-                Invoke-WebRequest -Uri $cloudbaseUrl -OutFile $cloudbaseInstaller
-                Start-Process msiexec.exe -ArgumentList "/i `"$cloudbaseInstaller`" /quiet /qn" -Wait
-                
-                # Wait a moment for installation to complete
-                Start-Sleep -Seconds 5
-                
-                # Configure CloudBase-Init using the shared configuration
-                Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigContent $cloudbaseConfig
-                Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
+                if (Get-FileFromUrl -Url $cloudbaseUrl -OutputPath $cloudbaseInstaller) {
+                    if (Install-MsiPackage -InstallerPath $cloudbaseInstaller -PackageName "CloudBase-Init" -Arguments @("/quiet", "/qn")) {
+                        # Configure CloudBase-Init using the shared configuration
+                        Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigContent $cloudbaseConfig
+                        Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
+                    }
+                }
             }
         } catch {
             Write-Log "Failed to install/verify CloudBase-Init: $($_.Exception.Message)" "WARNING"
