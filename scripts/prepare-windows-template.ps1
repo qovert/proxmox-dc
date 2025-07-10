@@ -189,9 +189,43 @@ try {
         # Install OpenSSH Server
         Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
         
+        # Wait a moment for installation to complete
+        Start-Sleep -Seconds 5
+        
         # Start and configure SSH service
-        Start-Service sshd
-        Set-Service -Name sshd -StartupType 'Automatic'
+        # The service name should be 'sshd' after OpenSSH Server installation
+        $sshServiceName = "sshd"
+        $sshService = Get-Service -Name $sshServiceName -ErrorAction SilentlyContinue
+        
+        if ($sshService) {
+            Start-Service -Name $sshServiceName
+            Set-Service -Name $sshServiceName -StartupType 'Automatic'
+            Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+        } else {
+            # Try alternative service names if 'sshd' doesn't exist
+            $alternativeNames = @("OpenSSH SSH Server", "ssh-agent")
+            $serviceFound = $false
+            
+            foreach ($altName in $alternativeNames) {
+                $altService = Get-Service -Name $altName -ErrorAction SilentlyContinue
+                if ($altService -and $altService.DisplayName -like "*SSH*Server*") {
+                    $sshServiceName = $altName
+                    Start-Service -Name $sshServiceName
+                    Set-Service -Name $sshServiceName -StartupType 'Automatic'
+                    Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+                    $serviceFound = $true
+                    break
+                }
+            }
+            
+            if (-not $serviceFound) {
+                Write-Log "SSH service not found after installation. Available services:" "WARNING"
+                Get-Service | Where-Object { $_.Name -like "*ssh*" -or $_.DisplayName -like "*SSH*" } | ForEach-Object {
+                    Write-Log "  - Name: $($_.Name), DisplayName: $($_.DisplayName)" "INFO"
+                }
+                throw "SSH service not found after OpenSSH Server installation"
+            }
+        }
         
         # Verify firewall rule exists
         $firewallRule = Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue
@@ -254,8 +288,18 @@ ForceCommand powershell.exe
         # Configure PowerShell for SSH
         New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
         
-        # Restart SSH service
-        Restart-Service sshd
+        # Restart SSH service using the service name we determined earlier
+        Restart-Service -Name $sshServiceName
+        Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
+        
+        # Verify SSH service is running
+        Start-Sleep -Seconds 2
+        $sshServiceStatus = Get-Service -Name $sshServiceName
+        if ($sshServiceStatus.Status -eq "Running") {
+            Write-Log "SSH service is running successfully" "SUCCESS"
+        } else {
+            Write-Log "SSH service status: $($sshServiceStatus.Status)" "WARNING"
+        }
         
         Write-Log "OpenSSH Server configured successfully" "SUCCESS"
     } catch {
