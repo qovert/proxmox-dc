@@ -309,17 +309,22 @@ ForceCommand powershell.exe
 
     # Step 4: Install CloudBase-Init (if not skipped)
     if (-not $SkipCloudbaseInit) {
-        Write-Log "Installing CloudBase-Init..."
+        Write-Log "Checking CloudBase-Init installation..."
         try {
-            $cloudbaseUrl = "https://cloudbase.it/downloads/CloudbaseInitSetup_1_1_4_x64.msi"
-            $cloudbaseInstaller = "$env:TEMP\CloudbaseInit.msi"
+            $cloudbaseInstallPath = "C:\Program Files\Cloudbase Solutions\Cloudbase-Init"
+            $cloudbaseExecutable = "$cloudbaseInstallPath\Python\Scripts\cloudbase-init.exe"
+            $cloudbaseConfigPath = "$cloudbaseInstallPath\conf\cloudbase-init.conf"
             
-            Invoke-WebRequest -Uri $cloudbaseUrl -OutFile $cloudbaseInstaller
-            Start-Process msiexec.exe -ArgumentList "/i `"$cloudbaseInstaller`" /quiet /qn" -Wait
-            
-            # Configure CloudBase-Init
-            $cloudbaseConfigPath = "C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\cloudbase-init.conf"
-            $cloudbaseConfig = @"
+            # Check if CloudBase-Init is already installed
+            if (Test-Path $cloudbaseInstallPath) {
+                if (Test-Path $cloudbaseExecutable) {
+                    Write-Log "CloudBase-Init is already installed" "SUCCESS"
+                    
+                    # Ensure configuration is properly set up
+                    if (-not (Test-Path $cloudbaseConfigPath)) {
+                        Write-Log "CloudBase-Init configuration missing, creating..." "WARNING"
+                        
+                        $cloudbaseConfig = @"
 [DEFAULT]
 username=Administrator
 groups=Administrators
@@ -339,11 +344,54 @@ mtu_use_dhcp_config=true
 ntp_use_dhcp_config=true
 local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
 "@
-            $cloudbaseConfig | Out-File -FilePath $cloudbaseConfigPath -Encoding UTF8 -Force
-            
-            Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
+                        $cloudbaseConfig | Out-File -FilePath $cloudbaseConfigPath -Encoding UTF8 -Force
+                        Write-Log "CloudBase-Init configuration created" "SUCCESS"
+                    } else {
+                        Write-Log "CloudBase-Init configuration already exists" "SUCCESS"
+                    }
+                } else {
+                    Write-Log "CloudBase-Init directory found but executable missing, reinstalling..." "WARNING"
+                    throw "CloudBase-Init incomplete installation"
+                }
+            } else {
+                Write-Log "CloudBase-Init not found, installing..."
+                
+                $cloudbaseUrl = "https://cloudbase.it/downloads/CloudbaseInitSetup_1_1_4_x64.msi"
+                $cloudbaseInstaller = "$env:TEMP\CloudbaseInit.msi"
+                
+                Invoke-WebRequest -Uri $cloudbaseUrl -OutFile $cloudbaseInstaller
+                Start-Process msiexec.exe -ArgumentList "/i `"$cloudbaseInstaller`" /quiet /qn" -Wait
+                
+                # Wait a moment for installation to complete
+                Start-Sleep -Seconds 5
+                
+                # Configure CloudBase-Init
+                $cloudbaseConfig = @"
+[DEFAULT]
+username=Administrator
+groups=Administrators
+inject_user_password=true
+config_drive_raw_hhd=true
+config_drive_cdrom=true
+config_drive_vfat=true
+bsdtar_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\bsdtar.exe
+mtools_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\
+verbose=true
+debug=true
+logdir=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\
+logfile=cloudbase-init.log
+default_log_levels=comtypes=INFO,suds=INFO,iso8601=WARN,requests=WARN
+logging_serial_port_settings=COM1,115200,N,8
+mtu_use_dhcp_config=true
+ntp_use_dhcp_config=true
+local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
+"@
+                $cloudbaseConfig | Out-File -FilePath $cloudbaseConfigPath -Encoding UTF8 -Force
+                
+                Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
+            }
         } catch {
-            Write-Log "Failed to install CloudBase-Init: $($_.Exception.Message)" "WARNING"
+            Write-Log "Failed to install/verify CloudBase-Init: $($_.Exception.Message)" "WARNING"
         }
     } else {
         Write-Log "Skipping CloudBase-Init installation as requested" "WARNING"
