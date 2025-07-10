@@ -1,0 +1,85 @@
+# Proxmox Configuration
+proxmox_api_url      = "https://your-proxmox-server:8006/api2/json"
+proxmox_user         = "terraform@pve"
+proxmox_password     = "your-proxmox-password"
+proxmox_tls_insecure = true
+proxmox_node         = "proxmox-01"
+
+# Windows Template Configuration
+windows_template_name = "windows-server-2025-template"
+
+# Domain Controller Configuration
+dc_count       = 2
+dc_name_prefix = "dc"
+dc_vmid_start  = 200
+
+# VM Resource Configuration
+dc_cpu_cores   = 4
+dc_cpu_sockets = 1
+dc_memory_mb   = 8192
+
+# Storage Configuration
+storage_pool    = "local-lvm"
+os_disk_size    = "80G"
+data_disk_size  = "40G"
+
+# Network Configuration
+network_bridge     = "vmbr0"
+dc_ip_prefix      = "192.168.1"
+dc_ip_start       = 10
+network_cidr_bits = 24
+gateway_ip        = "192.168.1.1"
+dns_servers       = "1.1.1.1 8.8.8.8"
+dns_forwarders    = ["1.1.1.1", "8.8.8.8"]
+enable_firewall   = true
+
+# Active Directory Configuration
+domain_name              = "testdomain.local"
+netbios_name            = "TESTDOMAIN"
+domain_functional_level = "WinThreshold"
+forest_functional_level = "WinThreshold"
+
+# Authentication Configuration
+admin_username = "Administrator"
+admin_password = "YourStrongPassword123!"
+dsrm_password  = "YourDSRMPassword123!"
+
+# SSH Configuration
+ssh_private_key_path = "~/.ssh/proxmox-testAD"
+ssh_public_key       = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... your-public-key-here"
+
+# Environment Configuration
+environment      = "development"
+prevent_destroy  = false
+
+# Organizational Unit Configuration
+create_default_ous = true
+organizational_units = [
+  "Servers",
+  "Workstations",
+  "Users",
+  "Groups",
+  "Service Accounts"
+]
+
+# Security Configuration
+enable_recycle_bin = true
+
+password_policy = {
+  min_length              = 12
+  complexity_enabled      = true
+  max_password_age_days   = 90
+  min_password_age_days   = 1
+  password_history_count  = 24
+  lockout_threshold       = 5
+  lockout_duration_minutes = 30
+  lockout_reset_minutes   = 30
+}
+
+# Backup Configuration
+enable_backup   = true
+backup_schedule = "0 2 * * *"  # Daily at 2 AM
+
+# Monitoring Configuration
+enable_monitoring   = true
+log_retention_days = 30
