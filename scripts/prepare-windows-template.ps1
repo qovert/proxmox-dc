@@ -184,71 +184,100 @@ try {
     }
 
     # Step 3: Configure OpenSSH Server
-    Write-Log "Installing and configuring OpenSSH Server..."
+    Write-Log "Checking OpenSSH Server installation..."
     try {
-        # Install OpenSSH Server
-        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-        
-        # Wait a moment for installation to complete
-        Start-Sleep -Seconds 5
-        
-        # Start and configure SSH service
-        # The service name should be 'sshd' after OpenSSH Server installation
+        $sshdConfigPath = "C:\ProgramData\ssh\sshd_config"
         $sshServiceName = "sshd"
         $sshService = Get-Service -Name $sshServiceName -ErrorAction SilentlyContinue
         
-        if ($sshService) {
-            Start-Service -Name $sshServiceName
-            Set-Service -Name $sshServiceName -StartupType 'Automatic'
-            Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+        # Check if SSH is already installed and configured
+        if ($sshService -and $sshService.Status -eq "Running" -and (Test-Path $sshdConfigPath)) {
+            Write-Log "OpenSSH Server is already installed and running" "SUCCESS"
+            Write-Log "SSH service status: $($sshService.Status)" "SUCCESS"
+            Write-Log "SSH configuration file exists: $sshdConfigPath" "SUCCESS"
+            
+            # Add SSH public key if provided and not already present
+            if ($SSHPublicKey) {
+                $authorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
+                if (Test-Path $authorizedKeysPath) {
+                    $existingKeys = Get-Content $authorizedKeysPath -ErrorAction SilentlyContinue
+                    if ($existingKeys -notcontains $SSHPublicKey) {
+                        Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
+                        Write-Log "SSH public key added to existing authorized_keys" "SUCCESS"
+                    } else {
+                        Write-Log "SSH public key already exists in authorized_keys" "SUCCESS"
+                    }
+                } else {
+                    New-Item -ItemType File -Path $authorizedKeysPath -Force
+                    icacls $authorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+                    Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
+                    Write-Log "SSH public key added to new authorized_keys file" "SUCCESS"
+                }
+            }
         } else {
-            # Try alternative service names if 'sshd' doesn't exist
-            $alternativeNames = @("OpenSSH SSH Server", "ssh-agent")
-            $serviceFound = $false
+            Write-Log "OpenSSH Server not properly installed or configured, proceeding with installation..."
             
-            foreach ($altName in $alternativeNames) {
-                $altService = Get-Service -Name $altName -ErrorAction SilentlyContinue
-                if ($altService -and $altService.DisplayName -like "*SSH*Server*") {
-                    $sshServiceName = $altName
-                    Start-Service -Name $sshServiceName
-                    Set-Service -Name $sshServiceName -StartupType 'Automatic'
-                    Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
-                    $serviceFound = $true
-                    break
+            # Install OpenSSH Server
+            Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+            
+            # Wait a moment for installation to complete
+            Start-Sleep -Seconds 5
+            
+            # Start and configure SSH service
+            # The service name should be 'sshd' after OpenSSH Server installation
+            $sshService = Get-Service -Name $sshServiceName -ErrorAction SilentlyContinue
+            
+            if ($sshService) {
+                Start-Service -Name $sshServiceName
+                Set-Service -Name $sshServiceName -StartupType 'Automatic'
+                Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+            } else {
+                # Try alternative service names if 'sshd' doesn't exist
+                $alternativeNames = @("OpenSSH SSH Server", "ssh-agent")
+                $serviceFound = $false
+                
+                foreach ($altName in $alternativeNames) {
+                    $altService = Get-Service -Name $altName -ErrorAction SilentlyContinue
+                    if ($altService -and $altService.DisplayName -like "*SSH*Server*") {
+                        $sshServiceName = $altName
+                        Start-Service -Name $sshServiceName
+                        Set-Service -Name $sshServiceName -StartupType 'Automatic'
+                        Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+                        $serviceFound = $true
+                        break
+                    }
+                }
+                
+                if (-not $serviceFound) {
+                    Write-Log "SSH service not found after installation. Available services:" "WARNING"
+                    Get-Service | Where-Object { $_.Name -like "*ssh*" -or $_.DisplayName -like "*SSH*" } | ForEach-Object {
+                        Write-Log "  - Name: $($_.Name), DisplayName: $($_.DisplayName)" "INFO"
+                    }
+                    throw "SSH service not found after OpenSSH Server installation"
                 }
             }
             
-            if (-not $serviceFound) {
-                Write-Log "SSH service not found after installation. Available services:" "WARNING"
-                Get-Service | Where-Object { $_.Name -like "*ssh*" -or $_.DisplayName -like "*SSH*" } | ForEach-Object {
-                    Write-Log "  - Name: $($_.Name), DisplayName: $($_.DisplayName)" "INFO"
-                }
-                throw "SSH service not found after OpenSSH Server installation"
+            # Verify firewall rule exists
+            $firewallRule = Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue
+            if (-not $firewallRule) {
+                New-NetFirewallRule -DisplayName "OpenSSH Server (sshd)" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
             }
-        }
-        
-        # Verify firewall rule exists
-        $firewallRule = Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue
-        if (-not $firewallRule) {
-            New-NetFirewallRule -DisplayName "OpenSSH Server (sshd)" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-        }
-        
-        # Configure SSH for key-based authentication
-        $authorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
-        New-Item -ItemType File -Path $authorizedKeysPath -Force
-        
-        # Set proper permissions
-        icacls $authorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
-        
-        # Add SSH public key if provided
-        if ($SSHPublicKey) {
-            Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
-            Write-Log "SSH public key added to authorized_keys" "SUCCESS"
-        }
-        
-        # Configure SSH daemon
-        $sshdConfigPath = "C:\ProgramData\ssh\sshd_config"
-        $sshdConfig = @"
+            
+            # Configure SSH for key-based authentication
+            $authorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
+            New-Item -ItemType File -Path $authorizedKeysPath -Force
+            
+            # Set proper permissions
+            icacls $authorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+            
+            # Add SSH public key if provided
+            if ($SSHPublicKey) {
+                Add-Content -Path $authorizedKeysPath -Value $SSHPublicKey
+                Write-Log "SSH public key added to authorized_keys" "SUCCESS"
+            }
+            
+            # Configure SSH daemon
+            $sshdConfig = @"
 # Enhanced SSH configuration for Windows Server
 Port 22
 Protocol 2
@@ -283,25 +312,26 @@ Subsystem sftp sftp-server.exe
 # PowerShell as default shell
 ForceCommand powershell.exe
 "@
-        $sshdConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
-        
-        # Configure PowerShell for SSH
-        New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
-        
-        # Restart SSH service using the service name we determined earlier
-        Restart-Service -Name $sshServiceName
-        Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
-        
-        # Verify SSH service is running
-        Start-Sleep -Seconds 2
-        $sshServiceStatus = Get-Service -Name $sshServiceName
-        if ($sshServiceStatus.Status -eq "Running") {
-            Write-Log "SSH service is running successfully" "SUCCESS"
-        } else {
-            Write-Log "SSH service status: $($sshServiceStatus.Status)" "WARNING"
+            $sshdConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
+            
+            # Configure PowerShell for SSH
+            New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
+            
+            # Restart SSH service using the service name we determined earlier
+            Restart-Service -Name $sshServiceName
+            Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
+            
+            # Verify SSH service is running
+            Start-Sleep -Seconds 2
+            $sshServiceStatus = Get-Service -Name $sshServiceName
+            if ($sshServiceStatus.Status -eq "Running") {
+                Write-Log "SSH service is running successfully" "SUCCESS"
+            } else {
+                Write-Log "SSH service status: $($sshServiceStatus.Status)" "WARNING"
+            }
+            
+            Write-Log "OpenSSH Server installed and configured successfully" "SUCCESS"
         }
-        
-        Write-Log "OpenSSH Server configured successfully" "SUCCESS"
     } catch {
         Write-Log "Failed to configure OpenSSH: $($_.Exception.Message)" "ERROR"
         throw
