@@ -405,16 +405,8 @@ ForceCommand powershell.exe
             $cloudbaseExecutable = "$cloudbaseInstallPath\Python\Scripts\cloudbase-init.exe"
             $cloudbaseConfigPath = "$cloudbaseInstallPath\conf\cloudbase-init.conf"
             
-            # Check if CloudBase-Init is already installed
-            if (Test-Path $cloudbaseInstallPath) {
-                if (Test-Path $cloudbaseExecutable) {
-                    Write-Log "CloudBase-Init is already installed" "SUCCESS"
-                    
-                    # Ensure configuration is properly set up
-                    if (-not (Test-Path $cloudbaseConfigPath)) {
-                        Write-Log "CloudBase-Init configuration missing, creating..." "WARNING"
-                        
-                        $cloudbaseConfig = @"
+            # Define the CloudBase-Init configuration (used for both missing config and fresh install)
+            $cloudbaseConfig = @"
 [DEFAULT]
 username=Administrator
 groups=Administrators
@@ -434,8 +426,23 @@ mtu_use_dhcp_config=true
 ntp_use_dhcp_config=true
 local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
 "@
-                        $cloudbaseConfig | Out-File -FilePath $cloudbaseConfigPath -Encoding UTF8 -Force
-                        Write-Log "CloudBase-Init configuration created" "SUCCESS"
+            
+            # Function to create CloudBase-Init configuration
+            function Set-CloudbaseConfig {
+                param($ConfigPath, $ConfigContent)
+                $ConfigContent | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force
+                Write-Log "CloudBase-Init configuration created/updated" "SUCCESS"
+            }
+            
+            # Check if CloudBase-Init is already installed
+            if (Test-Path $cloudbaseInstallPath) {
+                if (Test-Path $cloudbaseExecutable) {
+                    Write-Log "CloudBase-Init is already installed" "SUCCESS"
+                    
+                    # Ensure configuration is properly set up
+                    if (-not (Test-Path $cloudbaseConfigPath)) {
+                        Write-Log "CloudBase-Init configuration missing, creating..." "WARNING"
+                        Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigContent $cloudbaseConfig
                     } else {
                         Write-Log "CloudBase-Init configuration already exists" "SUCCESS"
                     }
@@ -455,29 +462,8 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
                 # Wait a moment for installation to complete
                 Start-Sleep -Seconds 5
                 
-                # Configure CloudBase-Init
-                $cloudbaseConfig = @"
-[DEFAULT]
-username=Administrator
-groups=Administrators
-inject_user_password=true
-config_drive_raw_hhd=true
-config_drive_cdrom=true
-config_drive_vfat=true
-bsdtar_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\bsdtar.exe
-mtools_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\
-verbose=true
-debug=true
-logdir=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\
-logfile=cloudbase-init.log
-default_log_levels=comtypes=INFO,suds=INFO,iso8601=WARN,requests=WARN
-logging_serial_port_settings=COM1,115200,N,8
-mtu_use_dhcp_config=true
-ntp_use_dhcp_config=true
-local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
-"@
-                $cloudbaseConfig | Out-File -FilePath $cloudbaseConfigPath -Encoding UTF8 -Force
-                
+                # Configure CloudBase-Init using the shared configuration
+                Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigContent $cloudbaseConfig
                 Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
             }
         } catch {
@@ -559,15 +545,52 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
         Start-Service wuauserv
         
         # Disable hibernate and page file
-        powercfg -h off
+        try {
+            powercfg -h off
+            Write-Log "Hibernation disabled successfully"
+        } catch {
+            Write-Log "Failed to disable hibernation: $($_.Exception.Message)" "WARNING"
+        }
         
-        $cs = Get-WmiObject -Class Win32_ComputerSystem
-        $cs.AutomaticManagedPagefile = $false
-        $cs.Put()
-        
-        $pf = Get-WmiObject -Class Win32_PageFileSetting -ErrorAction SilentlyContinue
-        if ($pf) {
-            $pf.Delete()
+        # Disable automatic managed page file using registry method (more reliable than WMI)
+        try {
+            Write-Log "Disabling automatic managed page file..."
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "PagingFiles" -Value ""
+            Write-Log "Page file configuration updated via registry" "SUCCESS"
+        } catch {
+            Write-Log "Failed to disable page file via registry, trying WMI method..." "WARNING"
+            
+            # Fallback to WMI method with better error handling
+            try {
+                $cs = Get-WmiObject -Class Win32_ComputerSystem -ErrorAction Stop
+                if ($cs.AutomaticManagedPagefile) {
+                    $cs.AutomaticManagedPagefile = $false
+                    $result = $cs.Put()
+                    if ($result.ReturnValue -eq 0) {
+                        Write-Log "Automatic managed page file disabled via WMI" "SUCCESS"
+                    } else {
+                        Write-Log "WMI Put operation returned error code: $($result.ReturnValue)" "WARNING"
+                    }
+                } else {
+                    Write-Log "Automatic managed page file already disabled" "SUCCESS"
+                }
+                
+                # Remove existing page file settings
+                $pf = Get-WmiObject -Class Win32_PageFileSetting -ErrorAction SilentlyContinue
+                if ($pf) {
+                    foreach ($pageFile in $pf) {
+                        try {
+                            $pageFile.Delete()
+                            Write-Log "Removed page file: $($pageFile.Name)" "SUCCESS"
+                        } catch {
+                            Write-Log "Failed to remove page file $($pageFile.Name): $($_.Exception.Message)" "WARNING"
+                        }
+                    }
+                }
+            } catch {
+                Write-Log "Failed to configure page file via WMI: $($_.Exception.Message)" "WARNING"
+                Write-Log "Page file configuration will be handled during Sysprep" "INFO"
+            }
         }
         
         Write-Log "System cleanup completed successfully" "SUCCESS"
