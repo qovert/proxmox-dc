@@ -233,25 +233,59 @@ try {
                 Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
             } else {
                 # Try alternative service names if 'sshd' doesn't exist
-                $alternativeNames = @("OpenSSH SSH Server", "ssh-agent")
+                $alternativeNames = @("OpenSSH SSH Server")
                 $serviceFound = $false
                 
                 foreach ($altName in $alternativeNames) {
                     $altService = Get-Service -Name $altName -ErrorAction SilentlyContinue
-                    if ($altService -and $altService.DisplayName -like "*SSH*Server*") {
-                        $sshServiceName = $altName
-                        Start-Service -Name $sshServiceName
-                        Set-Service -Name $sshServiceName -StartupType 'Automatic'
-                        Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
-                        $serviceFound = $true
-                        break
+                    if ($altService -and ($altService.DisplayName -like "*SSH*Server*" -or $altService.Name -like "*ssh*")) {
+                        $sshServiceName = $altService.Name  # Use the actual service Name, not DisplayName
+                        Write-Log "Found SSH service with name: '$($altService.Name)', DisplayName: '$($altService.DisplayName)'" "INFO"
+                        
+                        try {
+                            Start-Service -Name $sshServiceName
+                            Set-Service -Name $sshServiceName -StartupType 'Automatic'
+                            Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+                            $serviceFound = $true
+                            break
+                        } catch {
+                            Write-Log "Failed to start service '$sshServiceName': $($_.Exception.Message)" "WARNING"
+                            continue
+                        }
+                    }
+                }
+                
+                # If still not found, try to find any SSH-related service
+                if (-not $serviceFound) {
+                    $sshServices = Get-Service | Where-Object { 
+                        $_.Name -like "*ssh*" -or 
+                        $_.DisplayName -like "*SSH*" -or 
+                        $_.DisplayName -like "*OpenSSH*"
+                    }
+                    
+                    foreach ($sshSvc in $sshServices) {
+                        if ($sshSvc.DisplayName -like "*Server*" -or $sshSvc.Name -eq "sshd") {
+                            $sshServiceName = $sshSvc.Name
+                            Write-Log "Trying SSH service: Name='$($sshSvc.Name)', DisplayName='$($sshSvc.DisplayName)'" "INFO"
+                            
+                            try {
+                                Start-Service -Name $sshServiceName
+                                Set-Service -Name $sshServiceName -StartupType 'Automatic'
+                                Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+                                $serviceFound = $true
+                                break
+                            } catch {
+                                Write-Log "Failed to start service '$sshServiceName': $($_.Exception.Message)" "WARNING"
+                                continue
+                            }
+                        }
                     }
                 }
                 
                 if (-not $serviceFound) {
-                    Write-Log "SSH service not found after installation. Available services:" "WARNING"
+                    Write-Log "SSH service not found after installation. Available SSH-related services:" "WARNING"
                     Get-Service | Where-Object { $_.Name -like "*ssh*" -or $_.DisplayName -like "*SSH*" } | ForEach-Object {
-                        Write-Log "  - Name: $($_.Name), DisplayName: $($_.DisplayName)" "INFO"
+                        Write-Log "  - Name: '$($_.Name)', DisplayName: '$($_.DisplayName)', Status: '$($_.Status)'" "INFO"
                     }
                     throw "SSH service not found after OpenSSH Server installation"
                 }
@@ -318,8 +352,21 @@ ForceCommand powershell.exe
             New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
             
             # Restart SSH service using the service name we determined earlier
-            Restart-Service -Name $sshServiceName
-            Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
+            try {
+                Restart-Service -Name $sshServiceName
+                Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
+            } catch {
+                Write-Log "Failed to restart SSH service '$sshServiceName': $($_.Exception.Message)" "WARNING"
+                Write-Log "Attempting to stop and start the service instead..." "INFO"
+                try {
+                    Stop-Service -Name $sshServiceName -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 2
+                    Start-Service -Name $sshServiceName
+                    Write-Log "SSH service '$sshServiceName' stopped and started successfully" "SUCCESS"
+                } catch {
+                    Write-Log "Failed to stop/start SSH service: $($_.Exception.Message)" "ERROR"
+                }
+            }
             
             # Verify SSH service is running
             Start-Sleep -Seconds 2
@@ -328,6 +375,13 @@ ForceCommand powershell.exe
                 Write-Log "SSH service is running successfully" "SUCCESS"
             } else {
                 Write-Log "SSH service status: $($sshServiceStatus.Status)" "WARNING"
+                Write-Log "Attempting to start the service..." "INFO"
+                try {
+                    Start-Service -Name $sshServiceName
+                    Write-Log "SSH service started successfully" "SUCCESS"
+                } catch {
+                    Write-Log "Failed to start SSH service: $($_.Exception.Message)" "ERROR"
+                }
             }
             
             Write-Log "OpenSSH Server installed and configured successfully" "SUCCESS"
