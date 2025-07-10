@@ -75,7 +75,7 @@ For convenience, we've created an automated script that performs all the remaini
 
    ```powershell
    # Download the template preparation script
-   Invoke-WebRequest -Uri "https://raw.githubusercontent.com/your-repo/proxmox-testAD/main/scripts/prepare-windows-template.ps1" -OutFile "C:\prepare-template.ps1"
+   Invoke-WebRequest -Uri "https://raw.githubusercontent.com/qovert/proxmox-dc/main/scripts/prepare-windows-template.ps1" -OutFile "C:\prepare-template.ps1"
    
    # Run the script (basic usage)
    PowerShell.exe -ExecutionPolicy Bypass -File "C:\prepare-template.ps1"
@@ -441,8 +441,8 @@ pwsh -Version
 1. **Clone the repository**:
 
    ```bash
-   git clone <repository-url>
-   cd proxmox-testAD
+   git clone https://github.com/qovert/proxmox-dc.git
+   cd proxmox-dc
    ```
 
 2. **Create terraform.tfvars**:
