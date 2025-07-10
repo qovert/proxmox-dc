@@ -302,8 +302,30 @@ try {
             Write-Log "SSH service status: $($sshService.Status)" "SUCCESS"
             Write-Log "SSH configuration file exists: $sshdConfigPath" "SUCCESS"
             
-            # Add SSH public key if provided and not already present
+            # Add SSH public key if provided
             Set-SSHPublicKey -PublicKey $SSHPublicKey
+        } elseif ($sshService -and (Test-Path $sshdConfigPath)) {
+            Write-Log "OpenSSH Server is installed but not running, starting service..." "INFO"
+            Write-Log "SSH service status: $($sshService.Status)" "INFO"
+            Write-Log "SSH configuration file exists: $sshdConfigPath" "SUCCESS"
+            
+            try {
+                # Configure and start the SSH service
+                Set-Service -Name $sshServiceName -StartupType 'Automatic'
+                Start-Service -Name $sshServiceName
+                Write-Log "SSH service started and configured for automatic startup" "SUCCESS"
+                
+                # Add SSH public key if provided
+                Set-SSHPublicKey -PublicKey $SSHPublicKey
+                
+                # Verify the service is now running
+                $updatedService = Get-Service -Name $sshServiceName
+                Write-Log "SSH service status after start: $($updatedService.Status)" "SUCCESS"
+            } catch {
+                Write-Log "Failed to start SSH service: $($_.Exception.Message)" "WARNING"
+                Write-Log "Will proceed with full OpenSSH installation..." "INFO"
+                # Fall through to the full installation logic below
+            }
         } else {
             Write-Log "OpenSSH Server not properly installed or configured, proceeding with installation..."
             
