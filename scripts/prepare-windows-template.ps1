@@ -224,26 +224,54 @@ try {
             Start-Sleep -Seconds 5
             
             # Start and configure SSH service
-            # The service name should be 'sshd' after OpenSSH Server installation
-            $sshService = Get-Service -Name $sshServiceName -ErrorAction SilentlyContinue
+            # Look for known SSH service names: sshd and ssh-agent
+            $knownSSHServices = @("sshd", "ssh-agent")
+            $serviceFound = $false
             
-            if ($sshService) {
-                Start-Service -Name $sshServiceName
-                Set-Service -Name $sshServiceName -StartupType 'Automatic'
-                Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
-            } else {
-                # Try alternative service names if 'sshd' doesn't exist
-                $alternativeNames = @("OpenSSH SSH Server")
-                $serviceFound = $false
+            foreach ($serviceName in $knownSSHServices) {
+                $testService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+                if ($testService) {
+                    $sshServiceName = $serviceName
+                    Write-Log "Found SSH service: '$serviceName'" "INFO"
+                    
+                    # For the main SSH server daemon, ensure it's running
+                    if ($serviceName -eq "sshd") {
+                        try {
+                            if ($testService.Status -ne "Running") {
+                                Start-Service -Name $serviceName
+                            }
+                            Set-Service -Name $serviceName -StartupType 'Automatic'
+                            Write-Log "SSH service '$serviceName' started and configured" "SUCCESS"
+                            $serviceFound = $true
+                            break
+                        } catch {
+                            Write-Log "Failed to start service '$serviceName': $($_.Exception.Message)" "WARNING"
+                            continue
+                        }
+                    }
+                }
+            }
+            
+            # If neither sshd nor ssh-agent found, fall back to generic search
+            if (-not $serviceFound) {
+                Write-Log "Known SSH services (sshd, ssh-agent) not found, searching for alternatives..." "WARNING"
                 
-                foreach ($altName in $alternativeNames) {
-                    $altService = Get-Service -Name $altName -ErrorAction SilentlyContinue
-                    if ($altService -and ($altService.DisplayName -like "*SSH*Server*" -or $altService.Name -like "*ssh*")) {
-                        $sshServiceName = $altService.Name  # Use the actual service Name, not DisplayName
-                        Write-Log "Found SSH service with name: '$($altService.Name)', DisplayName: '$($altService.DisplayName)'" "INFO"
+                $sshServices = Get-Service | Where-Object { 
+                    $_.Name -like "*ssh*" -or 
+                    $_.DisplayName -like "*SSH*" -or 
+                    $_.DisplayName -like "*OpenSSH*"
+                }
+                
+                foreach ($sshSvc in $sshServices) {
+                    # Prioritize services that look like the main SSH daemon
+                    if ($sshSvc.DisplayName -like "*Server*" -or $sshSvc.Name -like "*sshd*") {
+                        $sshServiceName = $sshSvc.Name
+                        Write-Log "Trying SSH service: Name='$($sshSvc.Name)', DisplayName='$($sshSvc.DisplayName)'" "INFO"
                         
                         try {
-                            Start-Service -Name $sshServiceName
+                            if ($sshSvc.Status -ne "Running") {
+                                Start-Service -Name $sshServiceName
+                            }
                             Set-Service -Name $sshServiceName -StartupType 'Automatic'
                             Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
                             $serviceFound = $true
@@ -251,33 +279,6 @@ try {
                         } catch {
                             Write-Log "Failed to start service '$sshServiceName': $($_.Exception.Message)" "WARNING"
                             continue
-                        }
-                    }
-                }
-                
-                # If still not found, try to find any SSH-related service
-                if (-not $serviceFound) {
-                    $sshServices = Get-Service | Where-Object { 
-                        $_.Name -like "*ssh*" -or 
-                        $_.DisplayName -like "*SSH*" -or 
-                        $_.DisplayName -like "*OpenSSH*"
-                    }
-                    
-                    foreach ($sshSvc in $sshServices) {
-                        if ($sshSvc.DisplayName -like "*Server*" -or $sshSvc.Name -eq "sshd") {
-                            $sshServiceName = $sshSvc.Name
-                            Write-Log "Trying SSH service: Name='$($sshSvc.Name)', DisplayName='$($sshSvc.DisplayName)'" "INFO"
-                            
-                            try {
-                                Start-Service -Name $sshServiceName
-                                Set-Service -Name $sshServiceName -StartupType 'Automatic'
-                                Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
-                                $serviceFound = $true
-                                break
-                            } catch {
-                                Write-Log "Failed to start service '$sshServiceName': $($_.Exception.Message)" "WARNING"
-                                continue
-                            }
                         }
                     }
                 }
@@ -351,21 +352,26 @@ ForceCommand powershell.exe
             # Configure PowerShell for SSH
             New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
             
-            # Restart SSH service using the service name we determined earlier
-            try {
-                Restart-Service -Name $sshServiceName
-                Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
-            } catch {
-                Write-Log "Failed to restart SSH service '$sshServiceName': $($_.Exception.Message)" "WARNING"
-                Write-Log "Attempting to stop and start the service instead..." "INFO"
+            # Restart SSH service using the determined service name
+            # We should have found either 'sshd' or another SSH service by now
+            if ($serviceFound -and $sshServiceName) {
                 try {
-                    Stop-Service -Name $sshServiceName -Force -ErrorAction SilentlyContinue
-                    Start-Sleep -Seconds 2
-                    Start-Service -Name $sshServiceName
-                    Write-Log "SSH service '$sshServiceName' stopped and started successfully" "SUCCESS"
+                    Restart-Service -Name $sshServiceName
+                    Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
                 } catch {
-                    Write-Log "Failed to stop/start SSH service: $($_.Exception.Message)" "ERROR"
+                    Write-Log "Failed to restart SSH service '$sshServiceName': $($_.Exception.Message)" "WARNING"
+                    Write-Log "Attempting to stop and start the service instead..." "INFO"
+                    try {
+                        Stop-Service -Name $sshServiceName -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Seconds 2
+                        Start-Service -Name $sshServiceName
+                        Write-Log "SSH service '$sshServiceName' stopped and started successfully" "SUCCESS"
+                    } catch {
+                        Write-Log "Failed to stop/start SSH service: $($_.Exception.Message)" "ERROR"
+                    }
                 }
+            } else {
+                Write-Log "Cannot restart SSH service - service name not determined" "WARNING"
             }
             
             # Verify SSH service is running

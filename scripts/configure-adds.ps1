@@ -7,7 +7,7 @@ param(
     [string]$DomainName,
     
     [Parameter(Mandatory=$true)]
-    [String]$SafeModePassword,
+    [SecureString]$SafeModePassword,
     
     [Parameter(Mandatory=$true)]
     [string]$IsPrimary = "false",
@@ -36,8 +36,8 @@ try {
     Write-Log "Domain: $DomainName"
     Write-Log "Is Primary DC: $IsPrimary"
     
-    # Convert secure string password
-    $securePassword = ConvertTo-SecureString -String $SafeModePassword -AsPlainText -Force
+    # Use the already secure password
+    $securePassword = $SafeModePassword
     
     # Import required modules
     Write-Log "Importing required PowerShell modules..."
