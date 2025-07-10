@@ -46,7 +46,7 @@ try {
     Write-Log "Installing Proxmox Guest Agent..."
     try {
         # Check if QEMU Guest Agent is already installed
-        $qemuGAService = Get-Service -Name "QEMU Guest Agent" -ErrorAction SilentlyContinue
+        $qemuGAService = Get-Service -Name "QEMU-GA" -ErrorAction SilentlyContinue
         $qemuGAPath = "C:\Program Files\Qemu-ga"
         
         if ($qemuGAService -or (Test-Path $qemuGAPath)) {
@@ -54,9 +54,9 @@ try {
             
             # Ensure service is running and set to automatic
             if ($qemuGAService) {
-                Set-Service -Name "QEMU Guest Agent" -StartupType Automatic
+                Set-Service -Name "QEMU-GA" -StartupType Automatic
                 if ($qemuGAService.Status -ne "Running") {
-                    Start-Service -Name "QEMU Guest Agent"
+                    Start-Service -Name "QEMU-GA"
                     Write-Log "QEMU Guest Agent service started" "SUCCESS"
                 }
             }
@@ -98,10 +98,10 @@ try {
                 Start-Sleep -Seconds 10
                 
                 # Start the service
-                $qemuGAService = Get-Service -Name "QEMU Guest Agent" -ErrorAction SilentlyContinue
+                $qemuGAService = Get-Service -Name "QEMU-GA" -ErrorAction SilentlyContinue
                 if ($qemuGAService) {
-                    Set-Service -Name "QEMU Guest Agent" -StartupType Automatic
-                    Start-Service -Name "QEMU Guest Agent"
+                    Set-Service -Name "QEMU-GA" -StartupType Automatic
+                    Start-Service -Name "QEMU-GA"
                     Write-Log "QEMU Guest Agent installed and started successfully" "SUCCESS"
                 } else {
                     Write-Log "QEMU Guest Agent service not found after installation" "WARNING"
