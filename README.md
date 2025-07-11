@@ -95,6 +95,7 @@ For convenience, we've created an automated script that performs the remaining t
 3. **What the script does**:
    - Installs critical Windows updates
    - Downloads and installs PowerShell 7 (adds to PATH)
+   - **Downloads SSH and CloudBase-Init configurations from GitHub**
    - Configures OpenSSH Server with key-based authentication
    - Installs and configures CloudBase-Init
    - Performs system optimization and security hardening
@@ -102,7 +103,13 @@ For convenience, we've created an automated script that performs the remaining t
    - Cleans up temporary files and logs
    - Runs Sysprep and shuts down the VM
 
-4. **After script completion**:
+4. **Configuration files automatically downloaded**:
+   - `sshd_config`: Main OpenSSH Server configuration
+   - `sshd_config_minimal`: Fallback SSH configuration
+   - `cloudbase-init.conf`: CloudBase-Init configuration
+   - All configurations are maintained separately for easy updates
+
+5. **After script completion**:
    - The VM will automatically shut down after Sysprep
    - Convert the VM to a template in Proxmox Web UI
    - The template is ready for deployment

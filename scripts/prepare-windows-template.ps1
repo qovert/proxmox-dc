@@ -413,9 +413,62 @@ try {
             # Configure SSH for key-based authentication
             Set-SSHPublicKey -PublicKey $SSHPublicKey
             
-            # Create Windows-compatible SSH configuration
-            Write-Log "Creating SSH configuration file..."
-            $sshdConfig = @"
+            # Download and apply SSH configuration from GitHub
+            Write-Log "Downloading SSH configuration from GitHub..."
+            $sshConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/sshd_config"
+            $tempSshConfig = "$env:TEMP\sshd_config"
+            
+            if (Get-FileFromUrl -Url $sshConfigUrl -OutputPath $tempSshConfig) {
+                Copy-Item -Path $tempSshConfig -Destination $sshdConfigPath -Force
+                Write-Log "SSH configuration file downloaded and applied" "SUCCESS"
+                
+                # Test SSH configuration before starting service
+                Write-Log "Testing SSH configuration..."
+                $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
+                if (Test-Path $sshdExe) {
+                    try {
+                        # Test SSH configuration syntax
+                        $configTest = & $sshdExe -t 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Log "SSH configuration test passed" "SUCCESS"
+                        } else {
+                            Write-Log "SSH configuration test failed: $configTest" "ERROR"
+                            Write-Log "Downloading minimal configuration as fallback..." "INFO"
+                            
+                            # Download minimal configuration as fallback
+                            $minimalConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/sshd_config_minimal"
+                            $tempMinimalConfig = "$env:TEMP\sshd_config_minimal"
+                            
+                            if (Get-FileFromUrl -Url $minimalConfigUrl -OutputPath $tempMinimalConfig) {
+                                Copy-Item -Path $tempMinimalConfig -Destination $sshdConfigPath -Force
+                                Write-Log "Minimal SSH configuration downloaded and applied" "SUCCESS"
+                            } else {
+                                Write-Log "Failed to download minimal SSH configuration, creating local fallback..." "WARNING"
+                                # Create a minimal working configuration as last resort
+                                $minimalConfig = @"
+Port 22
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+Match Group administrators
+       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
+PasswordAuthentication no
+LogLevel INFO
+Subsystem sftp sftp-server.exe
+"@
+                                $minimalConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
+                                Write-Log "Created local minimal SSH configuration" "SUCCESS"
+                            }
+                        }
+                    } catch {
+                        Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
+                    }
+                } else {
+                    Write-Log "SSH executable not found, configuration applied but cannot test" "WARNING"
+                }
+            } else {
+                Write-Log "Failed to download SSH configuration from GitHub, creating local configuration..." "WARNING"
+                # Fallback to local configuration if download fails
+                $localSshConfig = @"
 # Windows Server 2025 SSH Configuration
 Port 22
 
@@ -444,41 +497,8 @@ MaxSessions 10
 # Subsystem for SFTP
 Subsystem sftp sftp-server.exe
 "@
-            
-            # Write configuration file
-            $sshdConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
-            Write-Log "SSH configuration file created" "SUCCESS"
-            
-            # Test SSH configuration before starting service
-            Write-Log "Testing SSH configuration..."
-            $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
-            if (Test-Path $sshdExe) {
-                try {
-                    # Test SSH configuration syntax
-                    $configTest = & $sshdExe -t 2>&1
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Log "SSH configuration test passed" "SUCCESS"
-                    } else {
-                        Write-Log "SSH configuration test failed: $configTest" "ERROR"
-                        Write-Log "Using minimal configuration as fallback..." "INFO"
-                        
-                        # Create a minimal working configuration
-                        $minimalConfig = @"
-Port 22
-PubkeyAuthentication yes
-AuthorizedKeysFile .ssh/authorized_keys
-Match Group administrators
-       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
-PasswordAuthentication no
-LogLevel INFO
-Subsystem sftp sftp-server.exe
-"@
-                        $minimalConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
-                        Write-Log "Created minimal SSH configuration" "SUCCESS"
-                    }
-                } catch {
-                    Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
-                }
+                $localSshConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
+                Write-Log "Created local SSH configuration as fallback" "SUCCESS"
             }
             
             # Configure PowerShell as default shell (using registry method)
@@ -549,8 +569,27 @@ Subsystem sftp sftp-server.exe
             $cloudbaseExecutable = "$cloudbaseInstallPath\Python\Scripts\cloudbase-init.exe"
             $cloudbaseConfigPath = "$cloudbaseInstallPath\conf\cloudbase-init.conf"
             
-            # Define the CloudBase-Init configuration (used for both missing config and fresh install)
-            $cloudbaseConfig = @"
+            # Download CloudBase-Init configuration from GitHub
+            Write-Log "Downloading CloudBase-Init configuration from GitHub..."
+            $cloudbaseConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/cloudbase-init.conf"
+            $tempCloudbaseConfig = "$env:TEMP\cloudbase-init.conf"
+            
+            # Function to create CloudBase-Init configuration
+            function Set-CloudbaseConfig {
+                param($ConfigPath, $ConfigSource, $IsUrl = $false)
+                
+                if ($IsUrl) {
+                    if (Get-FileFromUrl -Url $ConfigSource -OutputPath $tempCloudbaseConfig) {
+                        Copy-Item -Path $tempCloudbaseConfig -Destination $ConfigPath -Force
+                        Write-Log "CloudBase-Init configuration downloaded and applied from GitHub" "SUCCESS"
+                        return $true
+                    } else {
+                        Write-Log "Failed to download CloudBase-Init configuration from GitHub" "WARNING"
+                        return $false
+                    }
+                } else {
+                    # Local fallback configuration
+                    $localConfig = @"
 [DEFAULT]
 username=Administrator
 groups=Administrators
@@ -570,12 +609,10 @@ mtu_use_dhcp_config=true
 ntp_use_dhcp_config=true
 local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
 "@
-            
-            # Function to create CloudBase-Init configuration
-            function Set-CloudbaseConfig {
-                param($ConfigPath, $ConfigContent)
-                $ConfigContent | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force
-                Write-Log "CloudBase-Init configuration created/updated" "SUCCESS"
+                    $localConfig | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force
+                    Write-Log "CloudBase-Init configuration created locally as fallback" "SUCCESS"
+                    return $true
+                }
             }
             
             # Check if CloudBase-Init is already installed
@@ -585,8 +622,11 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
                     
                     # Ensure configuration is properly set up
                     if (-not (Test-Path $cloudbaseConfigPath)) {
-                        Write-Log "CloudBase-Init configuration missing, creating..." "WARNING"
-                        Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigContent $cloudbaseConfig
+                        Write-Log "CloudBase-Init configuration missing, downloading from GitHub..." "WARNING"
+                        if (-not (Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource $cloudbaseConfigUrl -IsUrl $true)) {
+                            # Fallback to local configuration if download fails
+                            Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource "" -IsUrl $false
+                        }
                     } else {
                         Write-Log "CloudBase-Init configuration already exists" "SUCCESS"
                     }
@@ -602,8 +642,11 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
                 
                 if (Get-FileFromUrl -Url $cloudbaseUrl -OutputPath $cloudbaseInstaller) {
                     if (Install-MsiPackage -InstallerPath $cloudbaseInstaller -PackageName "CloudBase-Init" -Arguments @("/quiet", "/qn")) {
-                        # Configure CloudBase-Init using the shared configuration
-                        Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigContent $cloudbaseConfig
+                        # Download and configure CloudBase-Init from GitHub
+                        if (-not (Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource $cloudbaseConfigUrl -IsUrl $true)) {
+                            # Fallback to local configuration if download fails
+                            Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource "" -IsUrl $false
+                        }
                         Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
                     }
                 }

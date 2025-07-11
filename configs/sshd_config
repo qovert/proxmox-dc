@@ -1,0 +1,27 @@
+# Windows Server 2025 SSH Configuration
+Port 22
+
+# Authentication
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# For administrators, use the administrators_authorized_keys file
+Match Group administrators
+       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
+
+# Security settings
+PasswordAuthentication no
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+
+# Logging
+LogLevel INFO
+
+# Connection settings
+ClientAliveInterval 300
+ClientAliveCountMax 2
+MaxAuthTries 3
+MaxSessions 10
+
+# Subsystem for SFTP
+Subsystem sftp sftp-server.exe

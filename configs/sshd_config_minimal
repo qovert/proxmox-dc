@@ -1,0 +1,8 @@
+Port 22
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+Match Group administrators
+       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
+PasswordAuthentication no
+LogLevel INFO
+Subsystem sftp sftp-server.exe
