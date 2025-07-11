@@ -413,11 +413,11 @@ try {
             # Configure SSH for key-based authentication
             Set-SSHPublicKey -PublicKey $SSHPublicKey
             
-            # Configure SSH daemon
+            # Create Windows-compatible SSH configuration
+            Write-Log "Creating SSH configuration file..."
             $sshdConfig = @"
-# Enhanced SSH configuration for Windows Server
+# Windows Server 2025 SSH Configuration
 Port 22
-Protocol 2
 
 # Authentication
 PubkeyAuthentication yes
@@ -431,10 +431,8 @@ Match Group administrators
 PasswordAuthentication no
 PermitEmptyPasswords no
 ChallengeResponseAuthentication no
-UsePAM no
 
 # Logging
-SyslogFacility AUTH
 LogLevel INFO
 
 # Connection settings
@@ -445,14 +443,58 @@ MaxSessions 10
 
 # Subsystem for SFTP
 Subsystem sftp sftp-server.exe
-
-# PowerShell as default shell
-ForceCommand powershell.exe
 "@
-            $sshdConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
             
-            # Configure PowerShell for SSH
-            New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
+            # Write configuration file
+            $sshdConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
+            Write-Log "SSH configuration file created" "SUCCESS"
+            
+            # Test SSH configuration before starting service
+            Write-Log "Testing SSH configuration..."
+            $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
+            if (Test-Path $sshdExe) {
+                try {
+                    # Test SSH configuration syntax
+                    $configTest = & $sshdExe -t 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Log "SSH configuration test passed" "SUCCESS"
+                    } else {
+                        Write-Log "SSH configuration test failed: $configTest" "ERROR"
+                        Write-Log "Using minimal configuration as fallback..." "INFO"
+                        
+                        # Create a minimal working configuration
+                        $minimalConfig = @"
+Port 22
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+Match Group administrators
+       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
+PasswordAuthentication no
+LogLevel INFO
+Subsystem sftp sftp-server.exe
+"@
+                        $minimalConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
+                        Write-Log "Created minimal SSH configuration" "SUCCESS"
+                    }
+                } catch {
+                    Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
+                }
+            }
+            
+            # Configure PowerShell as default shell (using registry method)
+            Write-Log "Configuring PowerShell as default SSH shell..."
+            try {
+                # Ensure the OpenSSH registry key exists
+                if (-not (Test-Path "HKLM:\SOFTWARE\OpenSSH")) {
+                    New-Item -Path "HKLM:\SOFTWARE\OpenSSH" -Force | Out-Null
+                }
+                
+                # Set PowerShell as default shell
+                Set-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Force
+                Write-Log "PowerShell configured as default SSH shell" "SUCCESS"
+            } catch {
+                Write-Log "Failed to configure PowerShell as default shell: $($_.Exception.Message)" "WARNING"
+            }
             
             # Restart SSH service using the determined service name
             # We should have found either 'sshd' or another SSH service by now

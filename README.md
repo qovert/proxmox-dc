@@ -46,13 +46,14 @@ Creating a proper Windows Server 2025 template is crucial for successful deploym
    - Name: `windows-server-2025-template`
    - OS Type: Microsoft Windows
    - ISO: Windows Server 2025 installation media
+   - ISO: Current version of [virtio drivers](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/?C=M;O=D)
 
 2. **Configure VM Resources**:
 
-   ```
+   ```shell
    CPU: 2 cores (minimum for installation)
    Memory: 4GB (minimum for installation)
-   Disk: 80GB (will be resized during deployment)
+   Disk: virtio block 32GB (will be resized during deployment)
    Network: virtio (for better performance)
    ```
 
@@ -62,12 +63,13 @@ Creating a proper Windows Server 2025 template is crucial for successful deploym
 2. **Choose Windows Server 2025 Standard (Server Core)** - Recommended for better security, performance, and reduced resource usage
 3. **Set initial Administrator password**: Use a temporary password (will be changed via cloud-init)
 4. **Complete Windows Setup** and boot to command prompt
+5. **Install virtio drivers from ISO**
 
    > **Note**: Server Core provides a minimal installation without GUI, offering better security and performance for domain controllers. All configuration will be done via PowerShell and remote management tools.
 
 ### Step 3: Automated Template Preparation
 
-For convenience, we've created an automated script that performs all the remaining template preparation steps. You can either use this automated approach or follow the manual steps below.
+For convenience, we've created an automated script that performs the remaining template preparation steps. You can either use this automated approach or follow the manual steps below.
 
 #### Option A: Automated Script (Recommended)
 
@@ -176,9 +178,8 @@ If you prefer to run each step manually or need to customize the process, follow
    # Configure SSH daemon
    $sshdConfigPath = "C:\ProgramData\ssh\sshd_config"
    @"
-   # Enhanced SSH configuration for Windows Server
+   # Windows Server 2025 SSH Configuration
    Port 22
-   Protocol 2
    
    # Authentication
    PubkeyAuthentication yes
@@ -192,10 +193,8 @@ If you prefer to run each step manually or need to customize the process, follow
    PasswordAuthentication no
    PermitEmptyPasswords no
    ChallengeResponseAuthentication no
-   UsePAM no
    
    # Logging
-   SyslogFacility AUTH
    LogLevel INFO
    
    # Connection settings
@@ -206,10 +205,18 @@ If you prefer to run each step manually or need to customize the process, follow
    
    # Subsystem for SFTP
    Subsystem sftp sftp-server.exe
-   
-   # PowerShell as default shell
-   ForceCommand powershell.exe
    "@ | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
+   
+   # Test SSH configuration before starting service
+   $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
+   if (Test-Path $sshdExe) {
+       $configTest = & $sshdExe -t 2>&1
+       if ($LASTEXITCODE -ne 0) {
+           Write-Host "SSH configuration test failed: $configTest" -ForegroundColor Red
+       } else {
+           Write-Host "SSH configuration test passed" -ForegroundColor Green
+       }
+   }
    
    # Restart SSH service
    Restart-Service sshd
