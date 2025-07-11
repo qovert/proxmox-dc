@@ -197,7 +197,7 @@ try {
             $guestAgentInstaller = $null
             
             foreach ($drive in $cdDrives) {
-                # Check for virtio-win guest tools (newer format)
+                # Check for virtio-win guest tools as of version 0.1.271
                 $virtioWinPath = "$($drive.DeviceID)\virtio-win-guest-tools.exe"
                 if (Test-Path $virtioWinPath) {
                     $guestAgentInstaller = $virtioWinPath
@@ -205,7 +205,7 @@ try {
                     break
                 }
                 
-                # Check for legacy Proxmox guest agent path
+                # Check for legacy Proxmox guest agent path as of version 0.1.271
                 $proxmoxGAPath = "$($drive.DeviceID)\guest-agent\qemu-ga-x86_64.msi"
                 if (Test-Path $proxmoxGAPath) {
                     $guestAgentInstaller = $proxmoxGAPath
@@ -310,17 +310,17 @@ try {
             Write-Log "SSH configuration file exists: $sshdConfigPath" "SUCCESS"
             
             try {
-                # Configure and start the SSH service
-                Set-Service -Name $sshServiceName -StartupType 'Automatic'
-                Start-Service -Name $sshServiceName
-                Write-Log "SSH service started and configured for automatic startup" "SUCCESS"
-                
-                # Add SSH public key if provided
-                Set-SSHPublicKey -PublicKey $SSHPublicKey
-                
-                # Verify the service is now running
-                $updatedService = Get-Service -Name $sshServiceName
-                Write-Log "SSH service status after start: $($updatedService.Status)" "SUCCESS"
+                # Configure and start the SSH service using utility function
+                if (Set-ServiceConfiguration -ServiceName $sshServiceName -Description "SSH Server") {
+                    # Add SSH public key if provided
+                    Set-SSHPublicKey -PublicKey $SSHPublicKey
+                    
+                    # Verify the service is now running
+                    $updatedService = Get-Service -Name $sshServiceName
+                    Write-Log "SSH service status after start: $($updatedService.Status)" "SUCCESS"
+                } else {
+                    throw "Failed to configure SSH service using Set-ServiceConfiguration"
+                }
             } catch {
                 Write-Log "Failed to start SSH service: $($_.Exception.Message)" "WARNING"
                 Write-Log "Will proceed with full OpenSSH installation..." "INFO"
@@ -346,19 +346,11 @@ try {
                     $sshServiceName = $serviceName
                     Write-Log "Found SSH service: '$serviceName'" "INFO"
                     
-                    # For the main SSH server daemon, ensure it's running
+                    # For the main SSH server daemon, configure and start it
                     if ($serviceName -eq "sshd") {
-                        try {
-                            if ($testService.Status -ne "Running") {
-                                Start-Service -Name $serviceName
-                            }
-                            Set-Service -Name $serviceName -StartupType 'Automatic'
-                            Write-Log "SSH service '$serviceName' started and configured" "SUCCESS"
+                        if (Set-ServiceConfiguration -ServiceName $serviceName -Description "SSH Server") {
                             $serviceFound = $true
                             break
-                        } catch {
-                            Write-Log "Failed to start service '$serviceName': $($_.Exception.Message)" "WARNING"
-                            continue
                         }
                     }
                 }
@@ -380,17 +372,9 @@ try {
                         $sshServiceName = $sshSvc.Name
                         Write-Log "Trying SSH service: Name='$($sshSvc.Name)', DisplayName='$($sshSvc.DisplayName)'" "INFO"
                         
-                        try {
-                            if ($sshSvc.Status -ne "Running") {
-                                Start-Service -Name $sshServiceName
-                            }
-                            Set-Service -Name $sshServiceName -StartupType 'Automatic'
-                            Write-Log "SSH service '$sshServiceName' started and configured" "SUCCESS"
+                        if (Set-ServiceConfiguration -ServiceName $sshServiceName -Description "SSH Server ($($sshSvc.DisplayName))") {
                             $serviceFound = $true
                             break
-                        } catch {
-                            Write-Log "Failed to start service '$sshServiceName': $($_.Exception.Message)" "WARNING"
-                            continue
                         }
                     }
                 }
@@ -516,12 +500,20 @@ Subsystem sftp sftp-server.exe
                 Write-Log "Failed to configure PowerShell as default shell: $($_.Exception.Message)" "WARNING"
             }
             
-            # Restart SSH service using the determined service name
-            # We should have found either 'sshd' or another SSH service by now
+            # Restart SSH service to apply new configuration
             if ($serviceFound -and $sshServiceName) {
                 try {
                     Restart-Service -Name $sshServiceName
                     Write-Log "SSH service '$sshServiceName' restarted with new configuration" "SUCCESS"
+                    
+                    # Verify SSH service is running after restart
+                    Start-Sleep -Seconds 2
+                    $sshServiceStatus = Get-Service -Name $sshServiceName
+                    if ($sshServiceStatus.Status -eq "Running") {
+                        Write-Log "SSH service is running successfully" "SUCCESS"
+                    } else {
+                        Write-Log "SSH service status after restart: $($sshServiceStatus.Status)" "WARNING"
+                    }
                 } catch {
                     Write-Log "Failed to restart SSH service '$sshServiceName': $($_.Exception.Message)" "WARNING"
                     Write-Log "Attempting to stop and start the service instead..." "INFO"
@@ -536,22 +528,6 @@ Subsystem sftp sftp-server.exe
                 }
             } else {
                 Write-Log "Cannot restart SSH service - service name not determined" "WARNING"
-            }
-            
-            # Verify SSH service is running
-            Start-Sleep -Seconds 2
-            $sshServiceStatus = Get-Service -Name $sshServiceName
-            if ($sshServiceStatus.Status -eq "Running") {
-                Write-Log "SSH service is running successfully" "SUCCESS"
-            } else {
-                Write-Log "SSH service status: $($sshServiceStatus.Status)" "WARNING"
-                Write-Log "Attempting to start the service..." "INFO"
-                try {
-                    Start-Service -Name $sshServiceName
-                    Write-Log "SSH service started successfully" "SUCCESS"
-                } catch {
-                    Write-Log "Failed to start SSH service: $($_.Exception.Message)" "ERROR"
-                }
             }
             
             Write-Log "OpenSSH Server installed and configured successfully" "SUCCESS"

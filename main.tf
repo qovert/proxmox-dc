@@ -36,9 +36,27 @@ locals {
 # Data source to get the Windows Server template
 data "proxmox_virtual_environment_nodes" "available_nodes" {}
 
+# Validate template readiness before deployment
+resource "null_resource" "validate_template" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Validating Windows Server 2025 template: ${var.windows_template_name}"
+      echo "Ensure the template was prepared with prepare-windows-template.ps1"
+      echo "Required components in template:"
+      echo "  - PowerShell 7 installed and in PATH"
+      echo "  - OpenSSH Server configured with key authentication"
+      echo "  - CloudBase-Init installed and configured"
+      echo "  - Scripts directory: C:/Scripts/"
+      echo "  - Proxmox Guest Agent running"
+    EOT
+  }
+}
+
 # Deploy Windows Server 2025 Domain Controllers
 resource "proxmox_vm_qemu" "windows_dc" {
   count = var.dc_count
+  
+  depends_on = [null_resource.validate_template]
   
   # VM Identity
   name        = "${var.dc_name_prefix}-${format("%02d", count.index + 1)}"
@@ -103,10 +121,10 @@ resource "proxmox_vm_qemu" "windows_dc" {
   ciuser     = var.admin_username
   cipassword = var.admin_password
   
-  # SSH Keys for management
+  # SSH Keys for secure management (template configured for key-based auth only)
   sshkeys = var.ssh_public_key
   
-  # Wait for VM to be ready
+  # Wait for VM to be ready via SSH (configured in template)
   connection {
     type        = "ssh"
     user        = var.admin_username
@@ -114,68 +132,99 @@ resource "proxmox_vm_qemu" "windows_dc" {
     host        = local.dc_ips[count.index]
     port        = 22
     timeout     = "10m"
+    
+    # SSH connection settings for Windows
+    target_platform = "windows"
   }
   
-  # Upload PowerShell scripts
+  # Verify template components before proceeding
+  provisioner "remote-exec" {
+    connection {
+      type            = "ssh"
+      user            = var.admin_username
+      private_key     = file(var.ssh_private_key_path)
+      host            = local.dc_ips[count.index]
+      port            = 22
+      timeout         = "5m"
+      target_platform = "windows"
+    }
+    
+    inline = [
+      "# Verify PowerShell 7 is available",
+      "pwsh.exe -Command 'Write-Host \"PowerShell 7 version: $($PSVersionTable.PSVersion)\"'",
+      "# Verify Scripts directory exists", 
+      "if (!(Test-Path 'C:/Scripts')) { New-Item -ItemType Directory -Path 'C:/Scripts' -Force }",
+      "# Verify SSH service is running",
+      "pwsh.exe -Command 'Get-Service sshd | Format-Table Name, Status, StartType'",
+      "# Set execution policy for this session",
+      "pwsh.exe -Command 'Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force'",
+    ]
+  }
+  
+  # Upload PowerShell scripts to the pre-configured Scripts directory
   provisioner "file" {
     connection {
-      type        = "ssh"
-      user        = var.admin_username
-      private_key = file(var.ssh_private_key_path)
-      host        = local.dc_ips[count.index]
-      port        = 22
-      timeout     = "10m"
+      type            = "ssh"
+      user            = var.admin_username
+      private_key     = file(var.ssh_private_key_path)
+      host            = local.dc_ips[count.index]
+      port            = 22
+      timeout         = "10m"
+      target_platform = "windows"
     }
     
     source      = "scripts/"
-    destination = "C:\\Scripts"
+    destination = "C:/Scripts/"
   }
   
-  # Execute initial configuration
+  # Execute initial configuration using PowerShell 7
   provisioner "remote-exec" {
     connection {
-      type        = "ssh"
-      user        = var.admin_username
-      private_key = file(var.ssh_private_key_path)
-      host        = local.dc_ips[count.index]
-      port        = 22
-      timeout     = "10m"
+      type            = "ssh"
+      user            = var.admin_username
+      private_key     = file(var.ssh_private_key_path)
+      host            = local.dc_ips[count.index]
+      port            = 22
+      timeout         = "10m"
+      target_platform = "windows"
     }
     
     inline = [
-      "powershell.exe -ExecutionPolicy Bypass -File C:\\Scripts\\initial-setup.ps1 -ComputerName ${var.dc_name_prefix}-${format("%02d", count.index + 1)} -DomainName ${var.domain_name} -IsPrimary ${count.index == 0 ? "true" : "false"}",
+      "pwsh.exe -ExecutionPolicy Bypass -File C:/Scripts/initial-setup.ps1 -ComputerName ${var.dc_name_prefix}-${format("%02d", count.index + 1)} -DomainName ${var.domain_name} -IsPrimary ${count.index == 0 ? "true" : "false"}",
     ]
   }
   
-  # Configure Active Directory (run after initial setup)
+  # Configure Active Directory using PowerShell 7
   provisioner "remote-exec" {
     connection {
-      type        = "ssh"
-      user        = var.admin_username
-      private_key = file(var.ssh_private_key_path)
-      host        = local.dc_ips[count.index]
-      port        = 22
-      timeout     = "15m"
+      type            = "ssh"
+      user            = var.admin_username
+      private_key     = file(var.ssh_private_key_path)
+      host            = local.dc_ips[count.index]
+      port            = 22
+      timeout         = "15m"
+      target_platform = "windows"
     }
     
     inline = [
-      "powershell.exe -ExecutionPolicy Bypass -File C:\\Scripts\\configure-adds.ps1 -DomainName ${var.domain_name} -SafeModePassword ${var.dsrm_password} -IsPrimary ${count.index == 0 ? "true" : "false"} -PrimaryDcIp ${count.index == 0 ? local.dc_ips[0] : local.dc_ips[0]}",
+      "pwsh.exe -ExecutionPolicy Bypass -File C:/Scripts/configure-adds.ps1 -DomainName ${var.domain_name} -SafeModePassword ${var.dsrm_password} -IsPrimary ${count.index == 0 ? "true" : "false"} -PrimaryDcIp ${count.index == 0 ? local.dc_ips[0] : local.dc_ips[0]}",
     ]
   }
   
-  # Post-configuration tasks
+  # Post-configuration tasks using PowerShell 7
   provisioner "remote-exec" {
     connection {
-      type        = "ssh"
-      user        = var.admin_username
-      private_key = file(var.ssh_private_key_path)
-      host        = local.dc_ips[count.index]
-      port        = 22
-      timeout     = "10m"
+      type            = "ssh"
+      user            = var.admin_username
+      private_key     = file(var.ssh_private_key_path)
+      host            = local.dc_ips[count.index]
+      port            = 22
+      timeout         = "10m"
+      target_platform = "windows"
     }
     
     inline = [
-      "powershell.exe -ExecutionPolicy Bypass -File C:\\Scripts\\post-config.ps1 -DomainName ${var.domain_name} -DcIp ${local.dc_ips[count.index]}",
+      "pwsh.exe -ExecutionPolicy Bypass -File C:/Scripts/post-config.ps1 -DomainName ${var.domain_name} -DcIp ${local.dc_ips[count.index]}",
     ]
   }
   
@@ -217,17 +266,18 @@ resource "null_resource" "configure_dns_forwarding" {
   depends_on = [null_resource.wait_for_dc_ready]
   
   connection {
-    type        = "ssh"
-    user        = var.admin_username
-    private_key = file(var.ssh_private_key_path)
-    host        = local.dc_ips[count.index]
-    port        = 22
-    timeout     = "5m"
+    type            = "ssh"
+    user            = var.admin_username
+    private_key     = file(var.ssh_private_key_path)
+    host            = local.dc_ips[count.index]
+    port            = 22
+    timeout         = "5m"
+    target_platform = "windows"
   }
   
   provisioner "remote-exec" {
     inline = [
-      "powershell.exe -ExecutionPolicy Bypass -File C:\\Scripts\\configure-dns.ps1 -ForwarderIPs ${join(",", var.dns_forwarders)} -DomainName ${var.domain_name}",
+      "pwsh.exe -ExecutionPolicy Bypass -File C:/Scripts/configure-dns.ps1 -ForwarderIPs ${join(",", var.dns_forwarders)} -DomainName ${var.domain_name}",
     ]
   }
 }
