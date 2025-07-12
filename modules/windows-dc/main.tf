@@ -126,7 +126,6 @@ resource "null_resource" "upload_scripts" {
   
   connection {
     type        = "ssh"
-    user     = var.admin_username
     user        = var.admin_username
     private_key = file(var.ssh_private_key_path)
     host        = local.dc_ip
