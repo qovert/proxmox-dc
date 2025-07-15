@@ -128,7 +128,7 @@ If you prefer to run each step manually or need to customize the process, follow
    # Run the installer: proxmox-ve-guest-agent.exe
    ```
 
-2. **Configure Windows Updates**:
+2. **Install Windows Updates**:
 
    ```powershell
    # Install critical updates
@@ -443,7 +443,7 @@ pwsh -Version
 
    ```bash
    # Generate SSH key pair for the project
-   ssh-keygen -t rsa -b 4096 -f ~/.ssh/proxmox-testAD -C "proxmox-testAD-deployment"
+   ssh-keygen -t ed25519 -f ~/.ssh/proxmox-testAD -C "proxmox-testAD-deployment"
    
    # Add to SSH agent
    ssh-add ~/.ssh/proxmox-testAD

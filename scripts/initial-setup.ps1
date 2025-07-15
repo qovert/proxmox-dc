@@ -1,5 +1,7 @@
 # initial-setup.ps1
-# Initial Windows Server 2025 setup and configuration for Active Directory Domain Controller
+# Initial Windows Server 2025 setup and configuration for Active Directory    Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+    
+    # Configure services...ntroller
 # This script performs initial system configuration before AD DS installation
 
 param(
@@ -31,15 +33,6 @@ function Handle-Error {
 try {
     Write-Log "Starting initial setup for $ComputerName..."
     
-    # Set execution policy
-    Write-Log "Setting PowerShell execution policy..."
-    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force
-    
-    # Configure PowerShell for automation
-    Write-Log "Configuring PowerShell for automation..."
-    Enable-PSRemoting -Force
-    Set-Item wsman:\localhost\client\trustedhosts * -Force
-    
     # Set timezone to UTC (adjust as needed)
     Write-Log "Setting timezone..."
     Set-TimeZone -Id "UTC"
@@ -51,13 +44,6 @@ try {
         New-Item -Path $AutoUpdatePath -Force | Out-Null
     }
     Set-ItemProperty -Path $AutoUpdatePath -Name "NoAutoUpdate" -Value 1
-    
-    # Disable IE Enhanced Security Configuration
-    Write-Log "Disabling IE Enhanced Security Configuration..."
-    $AdminKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
-    $UserKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
-    Set-ItemProperty -Path $AdminKey -Name "IsInstalled" -Value 0
-    Set-ItemProperty -Path $UserKey -Name "IsInstalled" -Value 0
     
     # Configure network adapters
     Write-Log "Configuring network adapters..."
@@ -135,13 +121,11 @@ try {
         }
     }
     
-    # Create directories for AD database and logs
+    # Create directories for AD database and logs (data disk directories only)
     Write-Log "Creating directories for AD database and logs..."
     $directories = @(
-        "C:\Windows\NTDS",
-        "C:\Windows\SYSVOL",
         "D:\NTDS",
-        "D:\SYSVOL",
+        "D:\SYSVOL", 
         "D:\Logs"
     )
     
@@ -223,8 +207,7 @@ try {
         "RSAT-DNS-Server",
         "RSAT-DFS-Mgmt-Con",
         "RSAT-File-Services",
-        "GPMC",
-        "PowerShell-ISE"
+        "GPMC"
     )
     
     foreach ($feature in $features) {
@@ -244,7 +227,7 @@ try {
     Write-Log "Creating scheduled tasks for maintenance..."
     
     # Create AD health check task
-    $healthCheckAction = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-File C:\Scripts\health-check.ps1"
+    $healthCheckAction = New-ScheduledTaskAction -Execute "pwsh.exe" -Argument "-File C:\Scripts\health-check.ps1"
     $healthCheckTrigger = New-ScheduledTaskTrigger -Daily -At "06:00"
     $healthCheckPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount
     $healthCheckSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -RestartCount 3
