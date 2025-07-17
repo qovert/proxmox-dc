@@ -171,51 +171,6 @@ function Get-FileFromUrl {
     }
 }
 
-# Function to check sysprep status and logs
-function Get-SysprepStatus {
-    Write-Log "Checking sysprep status and logs..." "INFO"
-    
-    # Check if sysprep is currently running
-    $sysprepProcess = Get-Process -Name "sysprep" -ErrorAction SilentlyContinue
-    if ($sysprepProcess) {
-        Write-Log "Sysprep process is currently running (PID: $($sysprepProcess.Id))" "SUCCESS"
-        return $true
-    } else {
-        Write-Log "No sysprep process found running" "WARNING"
-    }
-    
-    # Check sysprep log files
-    $sysprepLogPaths = @(
-        "C:\Windows\System32\Sysprep\Panther\setupact.log",
-        "C:\Windows\System32\Sysprep\Panther\setuperr.log",
-        "C:\Windows\Panther\setupact.log",
-        "C:\Windows\Panther\setuperr.log"
-    )
-    
-    foreach ($logPath in $sysprepLogPaths) {
-        if (Test-Path $logPath) {
-            $logSize = (Get-Item $logPath).Length
-            $lastWrite = (Get-Item $logPath).LastWriteTime
-            Write-Log "Found log: $logPath (Size: $logSize bytes, Modified: $lastWrite)" "INFO"
-            
-            # Show last few lines of the log
-            try {
-                $lastLines = Get-Content $logPath -Tail 5 -ErrorAction SilentlyContinue
-                if ($lastLines) {
-                    Write-Log "Last 5 lines from $logPath`:" "INFO"
-                    foreach ($line in $lastLines) {
-                        Write-Log "  $line" "INFO"
-                    }
-                }
-            } catch {
-                Write-Log "Could not read log file: $logPath" "WARNING"
-            }
-        }
-    }
-    
-    return $false
-}
-
 Write-Log "Starting Windows Server 2025 Template Preparation" "SUCCESS"
 Write-Log "Script parameters: SkipWindowsUpdates=$SkipWindowsUpdates, SkipCloudbaseInit=$SkipCloudbaseInit, SkipSysprep=$SkipSysprep"
 
@@ -806,73 +761,14 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
 
     # Step 8: Sysprep (if not skipped)
     if (-not $SkipSysprep) {
-        Write-Log "Preparing to run Sysprep..." "SUCCESS"
+        Write-Log "Running Sysprep..." "SUCCESS"
         Write-Log "The system will shut down after Sysprep completes."
         Write-Log "After shutdown, convert the VM to a template in Proxmox."
         
-        # Verify sysprep executable exists
-        $sysprepPath = "C:\Windows\System32\Sysprep\sysprep.exe"
-        if (-not (Test-Path $sysprepPath)) {
-            Write-Log "Sysprep executable not found at $sysprepPath" "ERROR"
-            throw "Sysprep executable not found"
-        }
+        Start-Sleep -Seconds 5
         
-        Write-Log "Sysprep executable found: $sysprepPath" "SUCCESS"
-        Write-Log "Starting Sysprep process..." "INFO"
-        
-        Start-Sleep -Seconds 3
-        
-        try {
-            # Run Sysprep without OOBE to avoid initial setup dialogs
-            # This allows cloudbase-init to handle the initial configuration
-            Write-Log "Executing: sysprep.exe /generalize /shutdown /quiet" "INFO"
-            
-            # Start the sysprep process and wait for it to begin
-            $sysprepProcess = Start-Process -FilePath $sysprepPath -ArgumentList "/generalize", "/shutdown", "/quiet" -PassThru -NoNewWindow
-            
-            Write-Log "Sysprep process started with PID: $($sysprepProcess.Id)" "SUCCESS"
-            Write-Log "Monitoring sysprep process..." "INFO"
-            
-            # Monitor the process for a short time to ensure it started properly
-            $timeout = 30 # seconds
-            $elapsed = 0
-            $processRunning = $true
-            
-            while ($elapsed -lt $timeout -and $processRunning) {
-                Start-Sleep -Seconds 2
-                $elapsed += 2
-                
-                try {
-                    # Check if process is still running
-                    $currentProcess = Get-Process -Id $sysprepProcess.Id -ErrorAction SilentlyContinue
-                    if (-not $currentProcess) {
-                        $processRunning = $false
-                        Write-Log "Sysprep process has completed or terminated" "INFO"
-                        break
-                    } else {
-                        Write-Log "Sysprep is running... (elapsed: ${elapsed}s)" "INFO"
-                    }
-                } catch {
-                    $processRunning = $false
-                    Write-Log "Sysprep process monitoring ended" "INFO"
-                    break
-                }
-            }
-            
-            if ($processRunning) {
-                Write-Log "Sysprep is still running after ${timeout} seconds" "SUCCESS"
-                Write-Log "This is normal - sysprep will continue running and shutdown the system when complete" "INFO"
-            }
-            
-            Write-Log "Sysprep has been initiated successfully" "SUCCESS"
-            Write-Log "The system should shutdown automatically when sysprep completes" "INFO"
-            Write-Log "If the system doesn't shutdown within 10-15 minutes, check the sysprep logs at:" "INFO"
-            Write-Log "C:\Windows\System32\Sysprep\Panther\setupact.log" "INFO"
-            
-        } catch {
-            Write-Log "Failed to start sysprep: $($_.Exception.Message)" "ERROR"
-            throw "Sysprep execution failed"
-        }
+        # Run Sysprep
+        C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
     } else {
         Write-Log "Skipping Sysprep as requested" "WARNING"
         Write-Log "Template preparation completed successfully!" "SUCCESS"

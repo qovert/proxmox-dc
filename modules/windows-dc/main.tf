@@ -33,32 +33,13 @@ resource "proxmox_virtual_environment_vm" "dc" {
   
   # Clone from template
   clone {
-    vm_id        = var.template_vm_id
-    full         = true
-    datastore_id = var.storage_pool
+    vm_id = var.template_vm_id
   }
   
   # VM Configuration
   agent {
     enabled = true
   }
-  
-  # BIOS configuration - using OVMF (UEFI) to match template
-  bios = "ovmf"
-  
-  # Machine type to match template
-  machine = "q35"
-  
-  # SCSI hardware to match template
-  scsi_hardware = "virtio-scsi-single"
-  
-  # OS type to match template
-  operating_system {
-    type = "win11"
-  }
-  
-  # Boot order - using virtio0 to match template
-  boot_order = ["virtio0"]
   
   started = true
   on_boot = true
@@ -67,25 +48,10 @@ resource "proxmox_virtual_environment_vm" "dc" {
   cpu {
     cores   = var.cpu_cores
     sockets = var.cpu_sockets
-    type    = "x86-64-v2-AES"  # Match template CPU type
   }
   
   memory {
     dedicated = var.memory_mb
-  }
-  
-  # TPM 2.0 to match template
-  tpm_state {
-    datastore_id = var.storage_pool
-    version      = "v2.0"
-  }
-  
-  # EFI Disk to match template UEFI boot
-  efi_disk {
-    datastore_id      = var.storage_pool
-    file_format       = "raw"
-    type              = "4m"
-    pre_enrolled_keys = true
   }
   
   # Network Configuration
@@ -96,10 +62,10 @@ resource "proxmox_virtual_environment_vm" "dc" {
     model       = "virtio"
   }
   
-  # Primary Disk (OS) - inherited from clone, using virtio to match template
+  # Primary Disk (OS) - inherited from clone
   disk {
     datastore_id = var.storage_pool
-    interface    = "virtio0"
+    interface    = "scsi0"
     iothread     = true
     ssd          = true
     cache        = "writeback"
@@ -109,7 +75,7 @@ resource "proxmox_virtual_environment_vm" "dc" {
   # Data Disk (for AD database and logs)
   disk {
     datastore_id = var.storage_pool
-    interface    = "virtio1"
+    interface    = "scsi1"
     iothread     = true
     ssd          = true
     cache        = "writeback"
