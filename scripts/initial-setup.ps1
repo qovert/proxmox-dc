@@ -59,30 +59,16 @@ try {
         }
     }
     
-    # Configure Windows Firewall
+    # Configure Windows Firewall (minimal rules - most AD rules auto-enabled during installation)
     Write-Log "Configuring Windows Firewall..."
-    # Enable firewall rules for Active Directory
-    $ADFirewallRules = @(
-        "Active Directory Domain Controller (RPC)",
-        "Active Directory Domain Controller (RPC-EPMAP)",
-        "Active Directory Domain Controller - LDAP (UDP-In)",
-        "Active Directory Domain Controller - LDAP (TCP-In)",
-        "Active Directory Domain Controller - Secure LDAP (TCP-In)",
-        "Active Directory Domain Controller - SAM/LSA (NP-UDP-In)",
-        "Active Directory Domain Controller - SAM/LSA (NP-TCP-In)",
-        "Active Directory Domain Controller - NetLogon (NP-In)",
-        "Active Directory Domain Controller (RPC Dynamic)",
-        "Active Directory Web Services (TCP-In)",
+    # Enable supplementary firewall rules that may not be auto-enabled
+    $SupplementaryFirewallRules = @(
         "DFS Replication (RPC-In)",
-        "DNS (UDP, Incoming)",
-        "DNS (TCP, Incoming)",
-        "Kerberos Key Distribution Center (TCP-In)",
-        "Kerberos Key Distribution Center (UDP-In)",
-        "RPC Endpoint Mapper (TCP, Incoming)",
+        "RPC Endpoint Mapper (TCP, Incoming)", 
         "Windows Time (NTP-UDP-In)"
     )
     
-    foreach ($rule in $ADFirewallRules) {
+    foreach ($rule in $SupplementaryFirewallRules) {
         try {
             Enable-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
             Write-Log "Enabled firewall rule: $rule"
@@ -103,13 +89,10 @@ try {
     New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbprint $certThumbprint -Force
     New-NetFirewallRule -DisplayName "WinRM HTTPS" -Direction Inbound -LocalPort 5986 -Protocol TCP -Action Allow
     
-    # Configure services
-    Write-Log "Configuring services..."
+    # Configure services (non-AD services only)
+    Write-Log "Configuring system services..."
     $services = @(
-        @{Name="W32Time"; StartupType="Automatic"},
-        @{Name="Netlogon"; StartupType="Manual"},
-        @{Name="DNS"; StartupType="Manual"},
-        @{Name="DHCP"; StartupType="Manual"}
+        @{Name="W32Time"; StartupType="Automatic"}
     )
     
     foreach ($service in $services) {
@@ -121,19 +104,24 @@ try {
         }
     }
     
-    # Create directories for AD database and logs (data disk directories only)
-    Write-Log "Creating directories for AD database and logs..."
-    $directories = @(
-        "D:\NTDS",
-        "D:\SYSVOL", 
-        "D:\Logs"
-    )
-    
-    foreach ($dir in $directories) {
-        if (-not (Test-Path $dir)) {
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-            Write-Log "Created directory: $dir"
-        }
+    # Configure W32Time to sync with external NTP sources
+    Write-Log "Configuring W32Time for external NTP synchronization..."
+    try {
+        # Configure external NTP servers
+        w32tm /config /manualpeerlist:"time.windows.com,0x8 pool.ntp.org,0x8 time.nist.gov,0x8" /syncfromflags:manual /reliable:yes /update
+        
+        # Configure time service settings
+        w32tm /config /update
+        
+        # Restart the time service
+        Restart-Service w32time -ErrorAction SilentlyContinue
+        
+        # Force immediate synchronization
+        w32tm /resync /nowait
+        
+        Write-Log "W32Time configured to sync with external NTP sources"
+    } catch {
+        Write-Log "Warning: Could not configure W32Time NTP synchronization: $($_.Exception.Message)"
     }
     
     # Set system performance options
@@ -157,11 +145,9 @@ try {
     $pagefileset.MaximumSize = $pagingFileSize
     $pagefileset.Put() | Out-Null
     
-    # Configure registry settings for AD performance
-    Write-Log "Configuring registry settings for AD performance..."
+    # Configure registry settings for system performance
+    Write-Log "Configuring registry settings for system performance..."
     $registrySettings = @(
-        @{Path="HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters"; Name="Database log files path"; Value="D:\Logs"},
-        @{Path="HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters"; Name="DSA Database file"; Value="D:\NTDS\ntds.dit"},
         @{Path="HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters"; Name="RequireSignOrSeal"; Value=1; Type="DWORD"},
         @{Path="HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters"; Name="RequireStrongKey"; Value=1; Type="DWORD"}
     )
@@ -179,14 +165,12 @@ try {
         }
     }
     
-    # Configure Windows Event Logs
+    # Configure Windows Event Logs (system logs only)
     Write-Log "Configuring Windows Event Logs..."
     $eventLogs = @(
         @{LogName="Application"; MaxSize=104857600},  # 100MB
         @{LogName="System"; MaxSize=104857600},       # 100MB
-        @{LogName="Security"; MaxSize=209715200},     # 200MB
-        @{LogName="Directory Service"; MaxSize=104857600},  # 100MB
-        @{LogName="DNS Server"; MaxSize=52428800}     # 50MB
+        @{LogName="Security"; MaxSize=209715200}      # 200MB
     )
     
     foreach ($log in $eventLogs) {
@@ -195,31 +179,6 @@ try {
             Write-Log "Configured event log: $($log.LogName) - Max Size: $($log.MaxSize) bytes"
         } catch {
             Write-Log "Warning: Could not configure event log: $($log.LogName)"
-        }
-    }
-    
-    # Install Windows features required for AD DS
-    Write-Log "Installing Windows features required for AD DS..."
-    $features = @(
-        "AD-Domain-Services",
-        "DNS",
-        "RSAT-AD-Tools",
-        "RSAT-DNS-Server",
-        "RSAT-DFS-Mgmt-Con",
-        "RSAT-File-Services",
-        "GPMC"
-    )
-    
-    foreach ($feature in $features) {
-        try {
-            $result = Install-WindowsFeature -Name $feature -IncludeManagementTools -ErrorAction SilentlyContinue
-            if ($result.Success) {
-                Write-Log "Installed feature: $feature"
-            } else {
-                Write-Log "Warning: Could not install feature: $feature"
-            }
-        } catch {
-            Write-Log "Warning: Error installing feature: $feature"
         }
     }
     

@@ -29,6 +29,11 @@ variable "template_name" {
   type        = string
 }
 
+variable "template_vm_id" {
+  description = "VM ID of the Windows Server 2025 template"
+  type        = number
+}
+
 variable "vmid_start" {
   description = "Starting VM ID for domain controllers"
   type        = number
@@ -166,11 +171,4 @@ variable "scripts_path" {
   description = "Path to PowerShell scripts directory"
   type        = string
   default     = "scripts/"
-}
-
-# Lifecycle Configuration
-variable "prevent_destroy" {
-  description = "Prevent accidental destruction of resources"
-  type        = bool
-  default     = false
 }

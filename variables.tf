@@ -6,13 +6,13 @@ variable "proxmox_api_url" {
 }
 
 variable "proxmox_user" {
-  description = "Proxmox username"
+  description = "Proxmox username (for API token: user@realm!tokenname)"
   type        = string
-  default     = "terraform@pve"
+  default     = "terraform@pve!mytoken"
 }
 
-variable "proxmox_password" {
-  description = "Proxmox password"
+variable "proxmox_token" {
+  description = "Proxmox API token secret"
   type        = string
   sensitive   = true
 }
@@ -34,6 +34,12 @@ variable "windows_template_name" {
   description = "Name of the Windows Server 2025 template"
   type        = string
   default     = "windows-server-2025-template"
+}
+
+variable "windows_template_vm_id" {
+  description = "VM ID of the Windows Server 2025 template"
+  type        = number
+  default     = 9000
 }
 
 # Domain Controller Configuration
@@ -244,12 +250,6 @@ variable "environment" {
     condition     = contains(["development", "staging", "production"], var.environment)
     error_message = "Environment must be development, staging, or production."
   }
-}
-
-variable "prevent_destroy" {
-  description = "Prevent accidental destruction of resources"
-  type        = bool
-  default     = false
 }
 
 # Organizational Unit Configuration

@@ -1,7 +1,7 @@
 # Domain Controller Information
 output "dc_names" {
   description = "Names of the deployed domain controllers"
-  value       = [for dc in proxmox_vm_qemu.windows_dc : dc.name]
+  value       = [for dc in proxmox_virtual_environment_vm.windows_dc : dc.name]
 }
 
 output "dc_ip_addresses" {
@@ -11,7 +11,7 @@ output "dc_ip_addresses" {
 
 output "dc_vm_ids" {
   description = "VM IDs of the domain controllers"
-  value       = [for dc in proxmox_vm_qemu.windows_dc : dc.vmid]
+  value       = [for dc in proxmox_virtual_environment_vm.windows_dc : dc.vm_id]
 }
 
 # Domain Information
@@ -32,14 +32,14 @@ output "primary_dc_ip" {
 
 output "primary_dc_name" {
   description = "Name of the primary domain controller"
-  value       = proxmox_vm_qemu.windows_dc[0].name
+  value       = proxmox_virtual_environment_vm.windows_dc[0].name
 }
 
 # Connection Information
 output "winrm_connection_info" {
   description = "WinRM connection information for domain controllers"
   value = {
-    for i, dc in proxmox_vm_qemu.windows_dc : dc.name => {
+    for i, dc in proxmox_virtual_environment_vm.windows_dc : dc.name => {
       host     = local.dc_ips[i]
       port     = 5986
       username = var.admin_username
@@ -115,7 +115,7 @@ output "deployment_summary" {
     total_dcs     = var.dc_count
     environment   = var.environment
     domain_name   = var.domain_name
-    primary_dc    = proxmox_vm_qemu.windows_dc[0].name
+    primary_dc    = proxmox_virtual_environment_vm.windows_dc[0].name
     deployed_time = timestamp()
   }
 }
@@ -125,15 +125,15 @@ output "management_info" {
   description = "Management information and commands"
   value = {
     rdp_connections = [
-      for i, dc in proxmox_vm_qemu.windows_dc : 
+      for i, dc in proxmox_virtual_environment_vm.windows_dc : 
       "mstsc /v:${local.dc_ips[i]}:3389"
     ]
     winrm_test_commands = [
-      for i, dc in proxmox_vm_qemu.windows_dc : 
+      for i, dc in proxmox_virtual_environment_vm.windows_dc : 
       "winrs -r:https://${local.dc_ips[i]}:5986 -u:${var.admin_username} -ssl hostname"
     ]
     powershell_remote_commands = [
-      for i, dc in proxmox_vm_qemu.windows_dc : 
+      for i, dc in proxmox_virtual_environment_vm.windows_dc : 
       "Enter-PSSession -ComputerName ${local.dc_ips[i]} -Credential (Get-Credential) -UseSSL"
     ]
   }

@@ -767,8 +767,9 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
         
         Start-Sleep -Seconds 5
         
-        # Run Sysprep
-        C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
+        # Run Sysprep without OOBE to avoid initial setup dialogs
+        # This allows cloudbase-init to handle the initial configuration
+        C:\Windows\System32\Sysprep\sysprep.exe /generalize /shutdown /quiet
     } else {
         Write-Log "Skipping Sysprep as requested" "WARNING"
         Write-Log "Template preparation completed successfully!" "SUCCESS"

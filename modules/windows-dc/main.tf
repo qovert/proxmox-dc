@@ -4,8 +4,8 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "telmate/proxmox"
-      version = "~> 2.9"
+      source  = "bpg/proxmox"
+      version = "~> 0.66"
     }
   }
 }
@@ -24,85 +24,130 @@ locals {
 }
 
 # Deploy Windows Server 2025 Domain Controller
-resource "proxmox_vm_qemu" "dc" {
+resource "proxmox_virtual_environment_vm" "dc" {
   # VM Identity
   name        = local.dc_name
-  target_node = var.proxmox_node
-  vmid        = var.vmid_start + var.dc_index
-  desc        = "Windows Server 2025 Active Directory Domain Controller - ${var.dc_index == 0 ? "Primary" : "Additional"}"
+  node_name   = var.proxmox_node
+  vm_id       = var.vmid_start + var.dc_index
+  description = "Windows Server 2025 Active Directory Domain Controller - ${var.dc_index == 0 ? "Primary" : "Additional"}"
   
   # Clone from template
-  clone = var.template_name
-  
-  # VM Resources
-  cores    = var.cpu_cores
-  sockets  = var.cpu_sockets
-  memory   = var.memory_mb
-  
-  # VM Configuration
-  agent    = 1
-  os_type  = "win10"
-  qemu_os  = "win10"
-  onboot   = true
-  startup  = "order=3,up=30"
-  
-  # Network Configuration
-  network {
-    model    = "virtio"
-    bridge   = var.network_bridge
-    firewall = var.enable_firewall
+  clone {
+    vm_id        = var.template_vm_id
+    full         = true
+    datastore_id = var.storage_pool
   }
   
-  # Primary Disk (OS)
+  # VM Configuration
+  agent {
+    enabled = true
+  }
+  
+  # BIOS configuration - using OVMF (UEFI) to match template
+  bios = "ovmf"
+  
+  # Machine type to match template
+  machine = "q35"
+  
+  # SCSI hardware to match template
+  scsi_hardware = "virtio-scsi-single"
+  
+  # OS type to match template
+  operating_system {
+    type = "win11"
+  }
+  
+  # Boot order - using virtio0 to match template
+  boot_order = ["virtio0"]
+  
+  started = true
+  on_boot = true
+  
+  # VM Resources
+  cpu {
+    cores   = var.cpu_cores
+    sockets = var.cpu_sockets
+    type    = "x86-64-v2-AES"  # Match template CPU type
+  }
+  
+  memory {
+    dedicated = var.memory_mb
+  }
+  
+  # TPM 2.0 to match template
+  tpm_state {
+    datastore_id = var.storage_pool
+    version      = "v2.0"
+  }
+  
+  # EFI Disk to match template UEFI boot
+  efi_disk {
+    datastore_id      = var.storage_pool
+    file_format       = "raw"
+    type              = "4m"
+    pre_enrolled_keys = true
+  }
+  
+  # Network Configuration
+  network_device {
+    bridge      = var.network_bridge
+    enabled     = true
+    firewall    = var.enable_firewall
+    model       = "virtio"
+  }
+  
+  # Primary Disk (OS) - inherited from clone, using virtio to match template
   disk {
-    slot     = "scsi0"
-    type     = "scsi"
-    storage  = var.storage_pool
-    size     = var.os_disk_size
-    cache    = "writeback"
-    iothread = 1
-    ssd      = 1
+    datastore_id = var.storage_pool
+    interface    = "virtio0"
+    iothread     = true
+    ssd          = true
+    cache        = "writeback"
+    size         = parseint(replace(var.os_disk_size, "G", ""), 10)
   }
   
   # Data Disk (for AD database and logs)
   disk {
-    slot     = "scsi1"
-    type     = "scsi"
-    storage  = var.storage_pool
-    size     = var.data_disk_size
-    cache    = "writeback"
-    iothread = 1
-    ssd      = 1
+    datastore_id = var.storage_pool
+    interface    = "virtio1"
+    iothread     = true
+    ssd          = true
+    cache        = "writeback"
+    size         = parseint(replace(var.data_disk_size, "G", ""), 10)
   }
   
   # Cloud-init configuration
-  cloudinit_cdrom_storage = var.storage_pool
-  
-  # IP Configuration
-  ipconfig0 = "ip=${local.dc_ip}/${var.network_cidr_bits},gw=${var.gateway_ip}"
-  
-  # DNS Configuration
-  nameserver = var.dns_servers
-  
-  # User configuration
-  ciuser     = var.admin_username
-  cipassword = var.admin_password
-  
-  # SSH Keys (if needed for management)
-  sshkeys = var.ssh_public_keys
-  
-  tags = join(";", [for k, v in local.common_tags : "${k}=${v}"])
+  initialization {
+    datastore_id = var.storage_pool
+    
+    ip_config {
+      ipv4 {
+        address = "${local.dc_ip}/${var.network_cidr_bits}"
+        gateway = var.gateway_ip
+      }
+    }
+    
+    dns {
+      servers = split(" ", var.dns_servers)
+    }
+    
+    user_account {
+      username = var.admin_username
+      password = var.admin_password
+      keys     = [var.ssh_public_keys]
+    }
+  }
   
   # Lifecycle management
   lifecycle {
     create_before_destroy = false
-    prevent_destroy       = var.prevent_destroy
+    prevent_destroy       = false  # Set to true in production
   }
 }
 
 # Wait for VM to be ready
 resource "null_resource" "wait_for_vm" {
-  depends_on = [proxmox_vm_qemu.dc]
+  depends_on = [proxmox_virtual_environment_vm.dc]
   
   connection {
     type        = "ssh"
