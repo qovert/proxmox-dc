@@ -1,24 +1,24 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-# Proxmox Windows Server 2025 AD DC Terraform Project
+# Proxmox Windows Server 2025 AD DC Pure Ansible Project
 
-This project uses Terraform to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE.
+This project uses Pure Ansible to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE.
 
 ## Key Guidelines for this Project:
 
-1. **Infrastructure as Code**: All infrastructure should be defined in Terraform files
-2. **Modular Design**: Use Terraform modules for reusable components
-3. **Security First**: Never hardcode sensitive values, use variables and tfvars files
-4. **Documentation**: All resources should be well-documented with comments
-5. **Best Practices**: Follow Terraform and PowerShell best practices
+1. **Infrastructure as Code**: All infrastructure should be defined in Ansible playbooks
+2. **Modular Design**: Use Ansible roles for reusable components
+3. **Security First**: Implement proper security configurations and use Ansible Vault
+4. **Documentation**: Keep documentation current and comprehensive
+5. **Best Practices**: Follow Ansible and PowerShell best practices
 6. **Version Control**: Use .gitignore to exclude sensitive files and state files
 
 ## Project Structure:
-- `main.tf` - Main Terraform configuration
-- `variables.tf` - Input variables definition
-- `outputs.tf` - Output values
-- `terraform.tfvars.example` - Example variable values
-- `modules/` - Reusable Terraform modules
+- `ansible/pure-ansible-site.yml` - Main Ansible playbook
+- `ansible/group_vars/` - Configuration variables
+- `ansible/roles/` - Ansible roles for different components
+- `deploy.sh` - Main deployment script
+- `ansible/cleanup-vms.yml` - Cleanup playbook
 - `scripts/` - PowerShell scripts for post-deployment configuration
 - `docs/` - Additional documentation
 

@@ -5,136 +5,47 @@
     path: "C:\\Scripts\\Monitoring"
     state: directory
 
-- name: Create health check script
+- name: Create reports directory
+  ansible.windows.win_file:
+    path: "C:\\Scripts\\Reports"
+    state: directory
+
+- name: Deploy health check script
   ansible.windows.win_copy:
-    content: |
-      # AD Health Check Script
-      param(
-          [string]$ReportPath = "C:\Scripts\Reports\AD-Health-$(Get-Date -Format 'yyyy-MM-dd-HHmm').html"
-      )
-      
-      $results = @()
-      
-      # Check AD services
-      $services = @('NTDS', 'DNS', 'Netlogon', 'KDC')
-      foreach ($service in $services) {
-          $svc = Get-Service -Name $service -ErrorAction SilentlyContinue
-          if ($svc) {
-              $results += [PSCustomObject]@{
-                  Test = "Service: $service"
-                  Status = $svc.Status
-                  Result = if ($svc.Status -eq 'Running') { 'PASS' } else { 'FAIL' }
-              }
-          }
-      }
-      
-      # Check replication
-      try {
-          $replStatus = Get-ADReplicationPartnerMetadata -Target $env:COMPUTERNAME
-          $results += [PSCustomObject]@{
-              Test = "AD Replication"
-              Status = "Partners: $($replStatus.Count)"
-              Result = if ($replStatus.Count -gt 0) { 'PASS' } else { 'WARN' }
-          }
-      } catch {
-          $results += [PSCustomObject]@{
-              Test = "AD Replication"
-              Status = $_.Exception.Message
-              Result = 'FAIL'
-          }
-      }
-      
-      # Check DNS resolution
-      try {
-          $dnsTest = Resolve-DnsName -Name $env:USERDNSDOMAIN -ErrorAction Stop
-          $results += [PSCustomObject]@{
-              Test = "DNS Resolution"
-              Status = "Resolved to: $($dnsTest.IPAddress -join ', ')"
-              Result = 'PASS'
-          }
-      } catch {
-          $results += [PSCustomObject]@{
-              Test = "DNS Resolution"
-              Status = $_.Exception.Message
-              Result = 'FAIL'
-          }
-      }
-      
-      # Generate HTML report
-      $html = $results | ConvertTo-Html -Title "AD Health Check - $env:COMPUTERNAME" -PreContent "<h1>AD Health Check Report</h1><p>Generated: $(Get-Date)</p>"
-      $html | Out-File -FilePath $ReportPath -Encoding UTF8
-      
-      Write-Output "Health check completed. Report saved to: $ReportPath"
-      
-      # Return summary
-      $failCount = ($results | Where-Object { $_.Result -eq 'FAIL' }).Count
-      if ($failCount -gt 0) {
-          Write-Error "$failCount tests failed"
-          exit 1
-      } else {
-          Write-Output "All tests passed"
-          exit 0
-      }
+    src: "AD-HealthCheck.ps1"
     dest: "C:\\Scripts\\Monitoring\\AD-HealthCheck.ps1"
+
+- name: Deploy performance monitoring script
+  ansible.windows.win_copy:
+    src: "Performance-Monitor.ps1"
+    dest: "C:\\Scripts\\Monitoring\\Performance-Monitor.ps1"
 
 - name: Create scheduled task for health monitoring
   community.windows.win_scheduled_task:
     name: "AD Health Check"
     description: "Daily Active Directory health check"
     actions:
-    - path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-      arguments: "-ExecutionPolicy Bypass -File C:\\Scripts\\Monitoring\\AD-HealthCheck.ps1"
+      - path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        arguments: "-ExecutionPolicy Bypass -File C:\\Scripts\\Monitoring\\AD-HealthCheck.ps1"
     triggers:
-    - type: daily
-      start_boundary: "2023-01-01T06:00:00"
+      - type: daily
+        start_boundary: "2023-01-01T06:00:00"
     username: "SYSTEM"
     state: present
     enabled: true
-
-- name: Create performance monitoring script
-  ansible.windows.win_copy:
-    content: |
-      # Performance monitoring script
-      $perfCounters = @(
-          '\\Processor(_Total)\\% Processor Time',
-          '\\Memory\\Available MBytes',
-          '\\NTDS\\LDAP Searches/sec',
-          '\\NTDS\\LDAP Binds/sec'
-      )
-      
-      $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-      $logPath = "C:\\Scripts\\Reports\\Performance-$(Get-Date -Format 'yyyy-MM-dd').csv"
-      
-      $perfData = Get-Counter -Counter $perfCounters -MaxSamples 1 | ForEach-Object {
-          $_.CounterSamples | ForEach-Object {
-              [PSCustomObject]@{
-                  Timestamp = $timestamp
-                  Counter = $_.Path
-                  Value = [math]::Round($_.CookedValue, 2)
-              }
-          }
-      }
-      
-      # Export to CSV
-      if (Test-Path $logPath) {
-          $perfData | Export-Csv -Path $logPath -Append -NoTypeInformation
-      } else {
-          $perfData | Export-Csv -Path $logPath -NoTypeInformation
-      }
-    dest: "C:\\Scripts\\Monitoring\\Performance-Monitor.ps1"
 
 - name: Create scheduled task for performance monitoring
   community.windows.win_scheduled_task:
     name: "AD Performance Monitor"
     description: "Collect AD performance metrics every 15 minutes"
     actions:
-    - path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-      arguments: "-ExecutionPolicy Bypass -File C:\\Scripts\\Monitoring\\Performance-Monitor.ps1"
+      - path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        arguments: "-ExecutionPolicy Bypass -File C:\\Scripts\\Monitoring\\Performance-Monitor.ps1"
     triggers:
-    - type: time
-      repetition:
-        interval: "PT15M"
-      start_boundary: "2023-01-01T00:00:00"
+      - type: time
+        repetition:
+          interval: "PT15M"
+        start_boundary: "2023-01-01T00:00:00"
     username: "SYSTEM"
     state: present
     enabled: true
@@ -145,3 +56,8 @@
       & "C:\\Scripts\\Monitoring\\AD-HealthCheck.ps1"
   register: initial_health_check
   failed_when: false
+
+- name: Display health check results
+  ansible.builtin.debug:
+    var: initial_health_check.stdout_lines
+  when: initial_health_check.stdout_lines is defined

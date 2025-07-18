@@ -200,7 +200,7 @@ try {
     Write-Host ""
     Write-Host "IMPORTANT: After sysprep completes and the VM shuts down:" -ForegroundColor Red
     Write-Host "1. Convert the VM to a template in Proxmox" -ForegroundColor Red
-    Write-Host "2. Note the template VM ID for Terraform configuration" -ForegroundColor Red
+    Write-Host "2. Note the template VM ID for Ansible configuration" -ForegroundColor Red
     Write-Host ""
     
     $confirm = Read-Host "Do you want to continue with sysprep? (y/N)"

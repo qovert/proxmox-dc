@@ -1,17 +1,17 @@
 # Windows Server 2025 Active Directory Domain Controller on Proxmox
 
-This project uses Terraform to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE with comprehensive post-installation configuration.
+This project uses **Pure Ansible** to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE with comprehensive post-installation configuration.
 
 ## Features
 
-- **Infrastructure as Code**: Complete Terraform configuration for repeatable deployments
+- **Pure Ansible Implementation**: Single tool for both infrastructure provisioning and configuration
 - **Multiple Domain Controllers**: Support for deploying multiple DCs for redundancy
 - **Comprehensive Configuration**: Automated AD DS installation and configuration
 - **Security Hardening**: Built-in security configurations and policies
 - **Monitoring & Health Checks**: Automated health monitoring and reporting
-- **Backup Strategy**: Automated backup configuration for AD data
 - **DNS Configuration**: Complete DNS setup with forwarders and zones
-- **Modular Design**: Reusable Terraform modules for different environments
+- **Modular Design**: Reusable Ansible roles for different environments
+- **Template-Based Deployment**: Efficient VM provisioning from prepared templates
 
 ## Prerequisites
 
@@ -22,11 +22,11 @@ This project uses Terraform to deploy Windows Server 2025 Active Directory Domai
 - Storage pool with adequate space (120GB+ per DC)
 - Network bridge configured for domain controllers
 
-### Terraform Setup
+### Ansible Setup
 
-- Terraform >= 1.0
-- Proxmox provider configured
-- Network connectivity to Proxmox API
+- Ansible >= 2.9 with required collections
+- SSH access to Proxmox API
+- Network connectivity to Proxmox hosts
 
 ### Network Requirements
 
@@ -439,114 +439,98 @@ pwsh -Version
 
 ## Quick Start
 
-### Option 1: Terraform + Ansible (Recommended)
+### 1. Prepare Environment
 
-This approach uses Terraform for infrastructure and Ansible for configuration management, providing better separation of concerns and easier debugging.
+```bash
+# Clone the repository
+git clone https://github.com/qovert/proxmox-dc.git
+cd proxmox-dc
 
-1. **Set up Ansible environment**:
-
-   ```bash
-   # Run the setup script to install Ansible and required collections
-   ./setup-ansible.sh
-   ```
-
-2. **Generate SSH key pair**:
-
-   ```bash
-   # Generate SSH key pair for the project
-   ssh-keygen -t ed25519 -f ~/.ssh/proxmox-testAD -C "proxmox-testAD-deployment"
-   
-   # Add to SSH agent
-   ssh-add ~/.ssh/proxmox-testAD
-   
-   # Copy public key content for terraform.tfvars
-   cat ~/.ssh/proxmox-testAD.pub
-   ```
-
-3. **Clone the repository**:
-
-   ```bash
-   git clone https://github.com/qovert/proxmox-dc.git
-   cd proxmox-dc
-   ```
-
-4. **Configure variables**:
-
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   ```
-
-   Edit `terraform.tfvars` with your environment-specific values:
-
-   ```hcl
-   proxmox_api_url = "https://your-proxmox-server:8006/api2/json"
-   proxmox_user    = "terraform@pve!mytoken"
-   proxmox_token   = "your-api-token"
-   domain_name     = "yourdomain.local"
-   admin_password  = "YourStrongPassword123!"
-   
-   # SSH Configuration
-   ssh_private_key_path = "~/.ssh/proxmox-testAD"
-   ssh_public_key       = "ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABgQC... your-public-key-here"
-   ```
-
-5. **Deploy with Terraform + Ansible**:
-
-   ```bash
-   # Copy the Ansible-enabled configuration
-   cp main-ansible.tf main.tf
-   
-   # Initialize Terraform
-   terraform init
-   
-   # Plan deployment
-   terraform plan
-   
-   # Deploy infrastructure and run Ansible configuration
-   terraform apply
-   ```
-
-### Option 2: Traditional Terraform with PowerShell (Legacy)
-
-Use the original main.tf for inline PowerShell configuration if you prefer not to use Ansible.
-
-## Architecture: Terraform + Ansible
-
-This project now supports two deployment approaches:
-
-### Terraform + Ansible (Recommended)
-
-**Advantages:**
-- **Better Separation of Concerns**: Terraform handles infrastructure, Ansible handles configuration
-- **Idempotent Configuration**: Ansible ensures consistent state on re-runs
-- **Easier Debugging**: Individual Ansible tasks are easier to debug than inline scripts
-- **Reusable Components**: Ansible roles can be reused across different projects
-- **Better Error Handling**: Ansible provides robust error handling and rollback capabilities
-- **Configuration Drift Detection**: Ansible can detect and correct configuration drift
-- **Testing Support**: Ansible roles can be tested independently with Molecule
-
-**Architecture:**
-```
-Terraform (Infrastructure Layer)
-├── VM Creation & Resource Allocation
-├── Network Configuration
-├── Storage Setup
-└── Generate Ansible Inventory
-
-Ansible (Configuration Layer)
-├── Windows Base Configuration
-├── Active Directory Installation
-├── DNS Server Setup
-└── Monitoring & Health Checks
+# Set up Ansible environment
+./setup-ansible.sh
 ```
 
-### Traditional Terraform with PowerShell (Legacy)
+### 2. Generate SSH Key Pair
 
-The original approach using Terraform provisioners with inline PowerShell scripts is still available but not recommended for complex deployments due to:
-- Difficulty in debugging failed configurations
-- No idempotency guarantees
-- Complex error handling
-- Harder to test individual components
+```bash
+# Generate SSH key pair for the project
+ssh-keygen -t ed25519 -f ~/.ssh/proxmox-ad -C "proxmox-ad-deployment"
+
+# Add to SSH agent
+ssh-add ~/.ssh/proxmox-ad
+
+# Copy public key content for configuration
+cat ~/.ssh/proxmox-ad.pub
+```
+
+### 3. Configure Variables
+
+```bash
+# Edit main configuration
+nano ansible/group_vars/all.yml
+
+# Edit sensitive variables
+nano ansible/group_vars/vault.yml
+
+# Encrypt the vault file
+ansible-vault encrypt ansible/group_vars/vault.yml
+```
+
+### 4. Deploy Infrastructure
+
+```bash
+# Full deployment (provision VMs + configure AD)
+./deploy.sh
+
+# Or step-by-step:
+./deploy.sh provision   # Just create VMs
+./deploy.sh configure   # Just configure AD
+./deploy.sh validate    # Validate deployment
+```
+
+### 5. Cleanup (if needed)
+
+```bash
+# Remove all VMs and resources
+./deploy.sh cleanup
+```
+
+## Architecture
+
+This project uses **Pure Ansible** for both infrastructure provisioning and configuration management.
+
+### Deployment Flow
+
+```text
+1. VM Provisioning (Ansible)
+   ├── Create VMs from template using proxmox_kvm module
+   ├── Configure networking and storage
+   └── Start VMs and wait for SSH connectivity
+
+2. Dynamic Inventory (Ansible)
+   ├── Add VMs to Ansible inventory dynamically
+   └── Set up connection parameters and variables
+
+3. Configuration (Ansible Roles)
+   ├── windows_base: System preparation and hardening
+   ├── active_directory: AD DS installation and forest creation
+   ├── dns_server: DNS configuration with external scripts
+   └── monitoring: Health checks and performance monitoring
+
+4. Validation (Ansible)
+   ├── Verify services are running
+   ├── Test AD connectivity
+   └── Generate deployment summary
+```
+
+### Key Benefits
+
+- **Single Tool**: Use only Ansible for everything
+- **Better Error Recovery**: Built-in retry mechanisms and rollback
+- **Idempotent Operations**: Safe to re-run multiple times
+- **Dynamic Inventory**: VMs automatically added during provisioning
+- **Unified Debugging**: Consistent troubleshooting approach
+- **Modular Design**: Reusable roles for different environments
 
 ## Key Features of This Implementation
 
@@ -727,7 +711,7 @@ scp -i ~/.ssh/proxmox-testAD local-script.ps1 Administrator@192.168.1.10:C:/Scri
 
 ### Logs and Diagnostics
 
-- Terraform logs: `terraform apply -verbose`
+- Ansible logs: Use `-v`, `-vv`, or `-vvv` flags for increasing verbosity
 - PowerShell script logs: Check Windows Event Logs
 - AD health reports: `C:\Scripts\Reports\`
 
@@ -767,7 +751,7 @@ organizational_units = [
 
 ### Custom PowerShell Scripts
 
-Add your scripts to the `scripts/` directory and reference them in the Terraform configuration.
+Add your scripts to the `scripts/` directory and reference them in the Ansible roles.
 
 ### Environment-Specific Settings
 
@@ -801,6 +785,7 @@ For issues and questions:
 ## Acknowledgments
 
 - Proxmox VE community
-- Terraform Proxmox provider maintainers
+- Ansible community for Windows modules
+- Proxmox development team
 - Windows Server documentation
 - Active Directory best practices guides

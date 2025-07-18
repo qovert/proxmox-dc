@@ -1,0 +1,80 @@
+# Pure Ansible Group Variables
+# This replaces both terraform.tfvars and the generated Ansible variables
+
+# Proxmox Configuration
+proxmox_api_url: "https://proxmox.example.com:8006/api2/json"
+proxmox_user: "ansible@pve"
+# proxmox_password should be stored in vault (vault_proxmox_password)
+proxmox_node: "proxmox-01"
+proxmox_tls_insecure: true
+
+# Windows Template Configuration
+windows_template_name: "windows-server-2025-template"
+windows_template_vm_id: 9000
+
+# Domain Controller Configuration
+dc_count: 2
+dc_name_prefix: "dc"
+dc_vmid_start: 200
+
+# VM Resources
+dc_cpu_cores: 4
+dc_cpu_sockets: 1
+dc_memory_mb: 8192
+
+# Storage Configuration
+storage_pool: "local-lvm"
+os_disk_size: "80G"
+data_disk_size: "40G"
+
+# Network Configuration
+network_bridge: "vmbr0"
+dc_ip_prefix: "192.168.1"
+dc_ip_start: 10
+network_cidr_bits: 24
+gateway_ip: "192.168.1.1"
+dns_servers: "1.1.1.1 8.8.8.8"
+
+# Active Directory Configuration
+domain_name: "testdomain.local"
+netbios_name: "TESTDOMAIN"
+environment: "development"
+
+# Credentials (should be in vault)
+admin_username: "Administrator"
+# admin_password: stored as vault_admin_password
+# dsrm_password: stored as vault_dsrm_password
+
+# SSH Configuration  
+# ssh_public_key: "ssh-ed25519 AAAAB3NzaC1yc2E... your-key-here"
+
+# DNS Configuration
+dns_forwarders:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+# Organizational Units
+organizational_units:
+  - "Servers"
+  - "Workstations" 
+  - "Users"
+  - "Groups"
+  - "Service Accounts"
+
+# AD Configuration
+forest_functional_level: "WinThreshold"
+domain_functional_level: "WinThreshold"
+enable_recycle_bin: true
+enable_backup: true
+enable_monitoring: true
+
+# Password Policy
+password_policy:
+  min_length: 14
+  complexity_enabled: true
+  max_password_age_days: 60
+  min_password_age_days: 1
+  password_history_count: 24
+  lockout_threshold: 5
+  lockout_duration_minutes: 30
+  lockout_observation_window_minutes: 30

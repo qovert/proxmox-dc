@@ -1,79 +1,26 @@
 ---
 # DNS Server Configuration Role
-- name: Configure DNS forwarders
-  ansible.windows.win_powershell:
-    script: |
-      $forwarders = "{{ dns_forwarders | join('","') }}"
-      Set-DnsServerForwarder -IPAddress $forwarders.Split(',')
-      Write-Output "DNS forwarders configured: $forwarders"
-  when: is_primary_dc | default(false)
 
-- name: Configure DNS scavenging
-  ansible.windows.win_powershell:
-    script: |
-      # Enable scavenging on server
-      Set-DnsServerScavenging -ScavengingState $true -ScavengingInterval 7.00:00:00
-      
-      # Enable aging on forward lookup zone
-      Set-DnsServerZoneAging -Name "{{ domain_name }}" -Aging $true -RefreshInterval 7.00:00:00 -NoRefreshInterval 7.00:00:00
-      
-      Write-Output "DNS scavenging configured for domain {{ domain_name }}"
-  when: is_primary_dc | default(false)
+- name: Deploy DNS configuration script
+  ansible.windows.win_copy:
+    src: "Configure-DNS.ps1"
+    dest: "C:\\Scripts\\Configure-DNS.ps1"
 
-- name: Create reverse lookup zones
+- name: Configure DNS settings
   ansible.windows.win_powershell:
     script: |
-      $networkId = "{{ dc_ip_prefix }}.0/24"
-      $reverseLookupZone = "{{ dc_ip_prefix.split('.')[2] }}.{{ dc_ip_prefix.split('.')[1] }}.{{ dc_ip_prefix.split('.')[0] }}.in-addr.arpa"
-      
-      # Check if reverse lookup zone exists
-      $zone = Get-DnsServerZone -Name $reverseLookupZone -ErrorAction SilentlyContinue
-      if (-not $zone) {
-        Add-DnsServerPrimaryZone -NetworkId $networkId -ReplicationScope Domain
-        Write-Output "Created reverse lookup zone: $reverseLookupZone"
-      } else {
-        Write-Output "Reverse lookup zone already exists: $reverseLookupZone"
+      $params = @{
+          DnsForwarders = @("{{ dns_forwarders | join('","') }}")
+          DomainName = "{{ domain_name }}"
+          DcIpPrefix = "{{ dc_ip_prefix }}"
       }
+      & "C:\Scripts\Configure-DNS.ps1" @params
+  register: dns_config_result
   when: is_primary_dc | default(false)
 
-- name: Configure DNS server settings
-  ansible.windows.win_powershell:
-    script: |
-      # Configure DNS server settings
-      Set-DnsServerSetting -EnableDnsSec $true -EnableDnsSecValidation $true
-      
-      # Configure recursion settings
-      Set-DnsServerRecursion -Enable $true -AdditionalTimeout 4 -RetryInterval 3 -Timeout 8
-      
-      # Configure root hints
-      Import-DnsServerRootHint
-      
-      Write-Output "DNS server settings configured"
-  when: is_primary_dc | default(false)
-
-- name: Verify DNS functionality
-  ansible.windows.win_powershell:
-    script: |
-      # Test DNS resolution
-      $testResults = @()
-      
-      # Test domain resolution
-      try {
-        $domainTest = Resolve-DnsName -Name "{{ domain_name }}" -ErrorAction Stop
-        $testResults += "Domain resolution: PASS"
-      } catch {
-        $testResults += "Domain resolution: FAIL - $($_.Exception.Message)"
-      }
-      
-      # Test external resolution
-      try {
-        $externalTest = Resolve-DnsName -Name "google.com" -ErrorAction Stop
-        $testResults += "External resolution: PASS"
-      } catch {
-        $testResults += "External resolution: FAIL - $($_.Exception.Message)"
-      }
-      
-      # Output results
-      $testResults | ForEach-Object { Write-Output $_ }
-  register: dns_tests
-  failed_when: dns_tests.stdout_lines | select('FAIL') | length > 0
+- name: Display DNS configuration results
+  ansible.builtin.debug:
+    var: dns_config_result.stdout_lines
+  when: 
+    - is_primary_dc | default(false)
+    - dns_config_result.stdout_lines is defined

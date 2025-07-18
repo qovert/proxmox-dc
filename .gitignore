@@ -1,13 +1,14 @@
-# .gitignore for Terraform Proxmox AD Project
+# .gitignore for Pure Ansible Proxmox AD Project
 
-# Terraform files
-*.tfstate
-*.tfstate.*
-*.tfvars
-.terraform/
-.terraform.lock.hcl
-*.tfplan
-*.tfplan.*
+# Ansible sensitive files
+ansible/group_vars/vault.yml
+ansible/vault_pass.txt
+
+# Ansible temporary files
+ansible/*.retry
+ansible/.vault_pass
+ansible/collections/
+ansible/roles/*/tests/
 
 # Crash log files
 crash.log

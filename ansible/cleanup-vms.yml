@@ -1,0 +1,57 @@
+---
+# VM Cleanup Playbook for Pure Ansible Approach
+# This handles VM deletion when needed
+
+- name: Cleanup Windows AD VMs
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    # Proxmox Configuration
+    proxmox_host: "{{ proxmox_api_url | regex_replace('https://') | regex_replace(':8006/api2/json') }}"
+    proxmox_user: "{{ proxmox_user }}"
+    proxmox_password: "{{ vault_proxmox_password }}"
+    proxmox_node: "{{ proxmox_node }}"
+    
+    # VM Configuration
+    domain_controllers:
+      - name: "{{ dc_name_prefix }}-01"
+        vmid: "{{ dc_vmid_start }}"
+      - name: "{{ dc_name_prefix }}-02"
+        vmid: "{{ dc_vmid_start + 1 }}"
+
+  tasks:
+    - name: Stop Domain Controller VMs
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_password }}"
+        vmid: "{{ item.vmid }}"
+        state: stopped
+        timeout: 300
+        validate_certs: no
+      loop: "{{ domain_controllers }}"
+      ignore_errors: yes  # VM might already be stopped
+
+    - name: Wait for VMs to stop
+      pause:
+        seconds: 10
+
+    - name: Delete Domain Controller VMs
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_password }}"
+        vmid: "{{ item.vmid }}"
+        state: absent
+        timeout: 300
+        validate_certs: no
+      loop: "{{ domain_controllers }}"
+      register: vm_deletion
+
+    - name: Display cleanup results
+      debug:
+        msg: |
+          🧹 Cleanup completed for VM {{ item.item.vmid }} ({{ item.item.name }})
+          Status: {{ 'Deleted' if item.changed else 'Not found or already deleted' }}
+      loop: "{{ vm_deletion.results }}"
