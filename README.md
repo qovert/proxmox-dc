@@ -439,7 +439,18 @@ pwsh -Version
 
 ## Quick Start
 
-1. **Generate SSH key pair**:
+### Option 1: Terraform + Ansible (Recommended)
+
+This approach uses Terraform for infrastructure and Ansible for configuration management, providing better separation of concerns and easier debugging.
+
+1. **Set up Ansible environment**:
+
+   ```bash
+   # Run the setup script to install Ansible and required collections
+   ./setup-ansible.sh
+   ```
+
+2. **Generate SSH key pair**:
 
    ```bash
    # Generate SSH key pair for the project
@@ -452,52 +463,90 @@ pwsh -Version
    cat ~/.ssh/proxmox-testAD.pub
    ```
 
-1. **Clone the repository**:
+3. **Clone the repository**:
 
    ```bash
    git clone https://github.com/qovert/proxmox-dc.git
    cd proxmox-dc
    ```
 
-2. **Create terraform.tfvars**:
+4. **Configure variables**:
 
    ```bash
    cp terraform.tfvars.example terraform.tfvars
    ```
 
-3. **Configure variables**:
-
    Edit `terraform.tfvars` with your environment-specific values:
 
    ```hcl
    proxmox_api_url = "https://your-proxmox-server:8006/api2/json"
-   proxmox_user    = "terraform@pve"
-   proxmox_password = "your-password"
+   proxmox_user    = "terraform@pve!mytoken"
+   proxmox_token   = "your-api-token"
    domain_name     = "yourdomain.local"
    admin_password  = "YourStrongPassword123!"
    
    # SSH Configuration
    ssh_private_key_path = "~/.ssh/proxmox-testAD"
-   ssh_public_key       = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... your-public-key-here"
+   ssh_public_key       = "ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABgQC... your-public-key-here"
    ```
 
-4. **Initialize Terraform**:
+5. **Deploy with Terraform + Ansible**:
 
    ```bash
+   # Copy the Ansible-enabled configuration
+   cp main-ansible.tf main.tf
+   
+   # Initialize Terraform
    terraform init
-   ```
-
-5. **Plan deployment**:
-
-   ```bash
+   
+   # Plan deployment
    terraform plan
-   ```
-
-6. **Deploy infrastructure**:
-
-   ```bash
+   
+   # Deploy infrastructure and run Ansible configuration
    terraform apply
    ```
+
+### Option 2: Traditional Terraform with PowerShell (Legacy)
+
+Use the original main.tf for inline PowerShell configuration if you prefer not to use Ansible.
+
+## Architecture: Terraform + Ansible
+
+This project now supports two deployment approaches:
+
+### Terraform + Ansible (Recommended)
+
+**Advantages:**
+- **Better Separation of Concerns**: Terraform handles infrastructure, Ansible handles configuration
+- **Idempotent Configuration**: Ansible ensures consistent state on re-runs
+- **Easier Debugging**: Individual Ansible tasks are easier to debug than inline scripts
+- **Reusable Components**: Ansible roles can be reused across different projects
+- **Better Error Handling**: Ansible provides robust error handling and rollback capabilities
+- **Configuration Drift Detection**: Ansible can detect and correct configuration drift
+- **Testing Support**: Ansible roles can be tested independently with Molecule
+
+**Architecture:**
+```
+Terraform (Infrastructure Layer)
+├── VM Creation & Resource Allocation
+├── Network Configuration
+├── Storage Setup
+└── Generate Ansible Inventory
+
+Ansible (Configuration Layer)
+├── Windows Base Configuration
+├── Active Directory Installation
+├── DNS Server Setup
+└── Monitoring & Health Checks
+```
+
+### Traditional Terraform with PowerShell (Legacy)
+
+The original approach using Terraform provisioners with inline PowerShell scripts is still available but not recommended for complex deployments due to:
+- Difficulty in debugging failed configurations
+- No idempotency guarantees
+- Complex error handling
+- Harder to test individual components
 
 ## Key Features of This Implementation
 

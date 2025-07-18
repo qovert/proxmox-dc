@@ -761,18 +761,24 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
 
     # Step 8: Sysprep (if not skipped)
     if (-not $SkipSysprep) {
-        Write-Log "Running Sysprep..." "SUCCESS"
+        Write-Log "Running comprehensive Sysprep..." "SUCCESS"
         Write-Log "The system will shut down after Sysprep completes."
         Write-Log "After shutdown, convert the VM to a template in Proxmox."
         
-        Start-Sleep -Seconds 5
-        
-        # Run Sysprep
-        C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
+        # Use the comprehensive sysprep script instead of basic command
+        $sysprepScript = Join-Path $PSScriptRoot "run-sysprep.ps1"
+        if (Test-Path $sysprepScript) {
+            Write-Log "Using comprehensive sysprep script: $sysprepScript"
+            PowerShell.exe -ExecutionPolicy Bypass -File $sysprepScript
+        } else {
+            Write-Log "Sysprep script not found, using basic sysprep command" "WARNING"
+            Start-Sleep -Seconds 5
+            C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
+        }
     } else {
         Write-Log "Skipping Sysprep as requested" "WARNING"
         Write-Log "Template preparation completed successfully!" "SUCCESS"
-        Write-Log "Remember to run Sysprep before converting to template."
+        Write-Log "Remember to run comprehensive Sysprep using run-sysprep.ps1 before converting to template."
     }
 
 } catch {
