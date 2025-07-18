@@ -38,7 +38,6 @@ dns_servers: "1.1.1.1 8.8.8.8"
 # Active Directory Configuration
 domain_name: "testdomain.local"
 netbios_name: "TESTDOMAIN"
-environment: "development"
 
 # Credentials (should be in vault)
 admin_username: "Administrator"

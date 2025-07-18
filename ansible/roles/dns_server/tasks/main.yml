@@ -21,6 +21,6 @@
 - name: Display DNS configuration results
   ansible.builtin.debug:
     var: dns_config_result.stdout_lines
-  when: 
+  when:
     - is_primary_dc | default(false)
     - dns_config_result.stdout_lines is defined
