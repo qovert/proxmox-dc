@@ -1,4 +1,4 @@
-# .gitignore for Pure Ansible Proxmox AD Project
+# .gitignore for Ansible Proxmox AD Project
 
 # Ansible sensitive files
 ansible/group_vars/vault.yml

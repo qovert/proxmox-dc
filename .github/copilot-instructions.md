@@ -1,8 +1,8 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-# Proxmox Windows Server 2025 AD DC Pure Ansible Project
+# Proxmox Windows Server 2025 AD DC Ansible Project
 
-This project uses Pure Ansible to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE.
+This project uses Ansible to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE.
 
 ## Key Guidelines for this Project:
 
@@ -14,7 +14,7 @@ This project uses Pure Ansible to deploy Windows Server 2025 Active Directory Do
 6. **Version Control**: Use .gitignore to exclude sensitive files and state files
 
 ## Project Structure:
-- `ansible/pure-ansible-site.yml` - Main Ansible playbook
+- `ansible/site.yml` - Main Ansible playbook
 - `ansible/group_vars/` - Configuration variables
 - `ansible/roles/` - Ansible roles for different components
 - `deploy.sh` - Main deployment script

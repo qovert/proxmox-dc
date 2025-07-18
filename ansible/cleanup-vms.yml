@@ -1,5 +1,5 @@
 ---
-# VM Cleanup Playbook for Pure Ansible Approach
+# VM Cleanup Playbook for Ansible Approach
 # This handles VM deletion when needed
 
 - name: Cleanup Windows AD VMs

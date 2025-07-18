@@ -1,10 +1,10 @@
 # Windows Server 2025 Active Directory Domain Controller on Proxmox
 
-This project uses **Pure Ansible** to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE with comprehensive post-installation configuration.
+This project uses **Ansible** to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE with comprehensive post-installation configuration.
 
 ## Features
 
-- **Pure Ansible Implementation**: Single tool for both infrastructure provisioning and configuration
+- **Ansible Implementation**: Single tool for both infrastructure provisioning and configuration
 - **Multiple Domain Controllers**: Support for deploying multiple DCs for redundancy
 - **Comprehensive Configuration**: Automated AD DS installation and configuration
 - **Security Hardening**: Built-in security configurations and policies
@@ -497,7 +497,7 @@ ansible-vault encrypt ansible/group_vars/vault.yml
 
 ## Architecture
 
-This project uses **Pure Ansible** for both infrastructure provisioning and configuration management.
+This project uses **Ansible** for both infrastructure provisioning and configuration management.
 
 ### Deployment Flow
 

@@ -1,17 +1,17 @@
 #!/bin/bash
-# Pure Ansible Windows AD Deployment Script
+# Ansible Windows AD Deployment Script
 # Single tool deployment for VM provisioning and configuration
 
 set -euo pipefail
 
-echo "🚀 Pure Ansible Windows AD Deployment"
-echo "======================================"
+echo "🚀 Ansible Windows AD Deployment"
+echo "================================"
 
 # Configuration
 ANSIBLE_DIR="ansible"
 VAULT_FILE="${ANSIBLE_DIR}/group_vars/vault.yml"
 INVENTORY_FILE="${ANSIBLE_DIR}/inventory.ini"
-PLAYBOOK="${ANSIBLE_DIR}/pure-ansible-site.yml"
+PLAYBOOK="${ANSIBLE_DIR}/site.yml"
 
 # Function to check prerequisites
 check_prerequisites() {
@@ -151,7 +151,7 @@ cleanup() {
 # Function to show help
 show_help() {
     cat << EOF
-Pure Ansible Windows AD Deployment
+    echo "Ansible Windows AD Deployment"
 
 Usage: $0 [COMMAND] [OPTIONS]
 
@@ -181,7 +181,7 @@ Requirements:
 Files:
   - ansible/group_vars/all.yml    # Main configuration
   - ansible/group_vars/vault.yml  # Encrypted credentials
-  - ansible/pure-ansible-site.yml # Main playbook
+  - ansible/site.yml # Main playbook
 EOF
 }
 

@@ -7,7 +7,6 @@ Use Ansible with the `community.general.proxmox_kvm` module to handle both infra
 ## Ansible Proxmox Modules
 
 ### VM Management
-
 - `community.general.proxmox_kvm` - Create/manage VMs
 - `community.general.proxmox_template` - Manage templates
 - `community.general.proxmox_storage_info` - Query storage info
@@ -22,17 +21,31 @@ Use Ansible with the `community.general.proxmox_kvm` module to handle both infra
   hosts: localhost
   gather_facts: no
   vars:
-    proxmox_host: "proxmox.example.com"
-    proxmox_user: "ansible@pve"
-    proxmox_password: "{{ vault_proxmox_password }}"
+    # Network Configuration
+    network_prefix: "192.168.1"
+    network_cidr: "24"
+    gateway_ip: "192.168.1.1"
+    bridge_name: "vmbr0"
+    
+    # Proxmox Configuration
+    proxmox_host: "{{ proxmox_api_url | regex_replace('https://([^:]+):.*', '\\1') }}"
+    proxmox_node: "{{ proxmox_node }}"
+    template_name: "{{ windows_template_name }}"
+    
+    # Storage Configuration
+    storage_pool: "{{ storage_pool }}"
+    os_disk_size: "{{ os_disk_size | regex_replace('G', '') }}"
+    data_disk_size: "{{ data_disk_size | regex_replace('G', '') }}"
+    
+    # VM Configuration
     domain_controllers:
-      - name: "dc-01" 
-        vmid: 201
-        ip: "192.168.1.10"
+      - name: "{{ dc_name_prefix }}-01" 
+        vmid: "{{ dc_vmid_start }}"
+        ip: "{{ network_prefix }}.{{ dc_ip_start }}"
         primary: true
-      - name: "dc-02"
-        vmid: 202 
-        ip: "192.168.1.11"
+      - name: "{{ dc_name_prefix }}-02"
+        vmid: "{{ dc_vmid_start + 1 }}"
+        ip: "{{ network_prefix }}.{{ dc_ip_start + 1 }}"
         primary: false
 
   tasks:
@@ -40,23 +53,23 @@ Use Ansible with the `community.general.proxmox_kvm` module to handle both infra
     - name: Create Windows Domain Controllers
       community.general.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
-        api_user: "{{ proxmox_user }}" 
+        api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password }}"
         name: "{{ item.name }}"
         vmid: "{{ item.vmid }}"
-        node: "proxmox-01"
-        clone: "windows-server-2025-template"
+        node: "{{ proxmox_node }}"
+        clone: "{{ template_name }}"
         full: true
-        cores: 4
-        memory: 8192
+        cores: "{{ dc_cpu_cores }}"
+        memory: "{{ dc_memory_mb }}"
         net:
-          net0: "virtio,bridge=vmbr0,ip={{ item.ip }}/24,gw=192.168.1.1"
+          net0: "virtio,bridge={{ bridge_name }},ip={{ item.ip }}/{{ network_cidr }},gw={{ gateway_ip }}"
         scsi:
-          scsi0: "local-lvm:80"  # OS disk
-          scsi1: "local-lvm:40"  # Data disk
-        ciuser: "Administrator"
+          scsi0: "{{ storage_pool }}:{{ os_disk_size }}"
+          scsi1: "{{ storage_pool }}:{{ data_disk_size }}"
+        ciuser: "{{ admin_username }}"
         cipassword: "{{ vault_admin_password }}"
-        sshkeys: "{{ ssh_public_key }}"
+        sshkeys: "{{ vault_ssh_public_key }}"
         state: present
         timeout: 300
       loop: "{{ domain_controllers }}"
@@ -142,15 +155,15 @@ terraform apply         # Create infrastructure
 # Terraform calls Ansible automatically
 ```
 
-### Pure Ansible Alternative
+### Ansible Alternative
 ```bash  
 # Single-step process
 ansible-playbook site.yml   # Create infrastructure + configure
 ```
 
-## When to Choose Pure Ansible
+## When to Choose Ansible
 
-**Choose Pure Ansible if:**
+**Choose Ansible if:**
 - ✅ Team is primarily Ansible-focused
 - ✅ Infrastructure is relatively simple
 - ✅ You want unified tooling
@@ -164,7 +177,7 @@ ansible-playbook site.yml   # Create infrastructure + configure
 
 ## Migration Path
 
-If you want to try pure Ansible:
+If you want to try Ansible:
 
 1. **Create new playbook** with VM provisioning tasks
 2. **Test with single VM** to validate approach  
@@ -174,7 +187,7 @@ If you want to try pure Ansible:
 
 ## Recommendation
 
-Given your setup, **Pure Ansible could work well** because:
+Given your setup, **Ansible works well** because:
 - ✅ Your Ansible roles are already well-structured  
 - ✅ Configuration is more complex than infrastructure
 - ✅ You have 2 VMs (simple infrastructure)

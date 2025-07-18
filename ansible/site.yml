@@ -1,38 +1,227 @@
 ---
-# Main playbook for Windows AD deployment
-- name: Deploy Windows Active Directory Domain Controllers
+# Ansible Implementation - Complete VM provisioning + configuration
+# Single-tool approach for Windows AD deployment on Proxmox
+
+- name: Deploy Windows AD Infrastructure with Ansible
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    # Proxmox Configuration
+    proxmox_host: "{{ proxmox_api_url | regex_replace('https://') | regex_replace(':8006/api2/json') }}"
+    proxmox_user: "{{ proxmox_user }}"
+    proxmox_password: "{{ vault_proxmox_password }}"
+    proxmox_node: "{{ proxmox_node }}"
+    
+    # VM Configuration
+    domain_controllers:
+      - name: "{{ dc_name_prefix }}-01"
+        vmid: "{{ dc_vmid_start }}"
+        ip: "{{ dc_ip_prefix }}.{{ dc_ip_start }}"
+        primary: true
+      - name: "{{ dc_name_prefix }}-02"
+        vmid: "{{ dc_vmid_start + 1 }}"
+        ip: "{{ dc_ip_prefix }}.{{ dc_ip_start + 1 }}"
+        primary: false
+
+  tasks:
+    # Phase 1: Infrastructure Provisioning
+    - name: Create Windows Domain Controller VMs
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_password }}"
+        name: "{{ item.name }}"
+        vmid: "{{ item.vmid }}"
+        node: "{{ proxmox_node }}"
+        clone: "{{ windows_template_name }}"
+        full: true
+        cores: "{{ dc_cpu_cores }}"
+        sockets: "{{ dc_cpu_sockets }}"
+        memory: "{{ dc_memory_mb }}"
+        bios: seabios
+        boot: order=scsi0
+        net:
+          net0: "virtio,bridge={{ network_bridge }},ip={{ item.ip }}/{{ network_cidr_bits }},gw={{ gateway_ip }}"
+        scsi:
+          scsi0: "{{ storage_pool }}:{{ os_disk_size | regex_replace('G', '') }}"
+          scsi1: "{{ storage_pool }}:{{ data_disk_size | regex_replace('G', '') }}"
+        ciuser: "{{ admin_username }}"
+        cipassword: "{{ admin_password }}"
+        sshkeys: "{{ ssh_public_key }}"
+        nameserver: "{{ dns_servers.split(' ') | join(' ') }}"
+        state: present
+        timeout: 600
+        validate_certs: no
+      loop: "{{ domain_controllers }}"
+      register: vm_creation
+      tags: [provision]
+
+    - name: Start Domain Controller VMs
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_password }}"
+        vmid: "{{ item.vmid }}"
+        state: started
+        timeout: 300
+        validate_certs: no
+      loop: "{{ domain_controllers }}"
+      tags: [provision]
+
+    - name: Wait for VMs to be accessible via SSH
+      wait_for:
+        host: "{{ item.ip }}"
+        port: 22
+        delay: 30
+        timeout: 600
+        state: started
+      loop: "{{ domain_controllers }}"
+      tags: [provision]
+
+    # Phase 2: Dynamic Inventory Creation
+    - name: Add Windows VMs to inventory
+      add_host:
+        name: "{{ item.name }}"
+        groups: 
+          - domain_controllers
+          - "{{ 'primary_dc' if item.primary else 'additional_dc' }}"
+        ansible_host: "{{ item.ip }}"
+        ansible_user: "{{ admin_username }}"
+        ansible_password: "{{ admin_password }}"
+        ansible_connection: ssh
+        ansible_shell_type: powershell
+        ansible_shell_executable: None
+        is_primary_dc: "{{ item.primary }}"
+        domain_name: "{{ domain_name }}"
+        netbios_name: "{{ netbios_name }}"
+        dsrm_password: "{{ dsrm_password }}"
+        admin_username: "{{ admin_username }}"
+        admin_password: "{{ admin_password }}"
+        dns_forwarders: "{{ dns_forwarders }}"
+        organizational_units: "{{ organizational_units }}"
+        forest_functional_level: "{{ forest_functional_level }}"
+        domain_functional_level: "{{ domain_functional_level }}"
+        enable_recycle_bin: "{{ enable_recycle_bin }}"
+      loop: "{{ domain_controllers }}"
+      tags: [provision, configure]
+
+    - name: Test SSH connectivity to all DCs
+      wait_for_connection:
+        timeout: 300
+      delegate_to: "{{ item.name }}"
+      loop: "{{ domain_controllers }}"
+      tags: [provision, configure]
+
+# Phase 3: Windows Configuration
+- name: Configure Windows Base System
   hosts: domain_controllers
   gather_facts: yes
-  become: no
+  serial: 1  # Configure one at a time to avoid conflicts
   vars:
     ansible_connection: ssh
     ansible_shell_type: powershell
     ansible_shell_executable: None
 
   pre_tasks:
-    - name: Wait for SSH connectivity
-      ansible.builtin.wait_for_connection:
+    - name: Verify SSH connectivity
+      wait_for_connection:
         timeout: 300
 
     - name: Gather Windows facts
-      ansible.builtin.setup:
+      setup:
 
   roles:
     - windows_base
+
+  tags: [configure, windows_base]
+
+# Phase 4: Active Directory Configuration
+- name: Install and Configure Active Directory
+  hosts: domain_controllers
+  gather_facts: no
+  serial: 1
+  vars:
+    ansible_connection: ssh
+    ansible_shell_type: powershell
+    ansible_shell_executable: None
+
+  roles:
     - active_directory
+
+  tags: [configure, active_directory]
+
+# Phase 5: DNS Server Configuration  
+- name: Configure DNS Servers
+  hosts: domain_controllers
+  gather_facts: no
+  vars:
+    ansible_connection: ssh
+    ansible_shell_type: powershell
+    ansible_shell_executable: None
+
+  roles:
     - dns_server
+
+  tags: [configure, dns]
+
+# Phase 6: Monitoring Setup
+- name: Setup Monitoring and Health Checks
+  hosts: domain_controllers
+  gather_facts: no
+  vars:
+    ansible_connection: ssh
+    ansible_shell_type: powershell
+    ansible_shell_executable: None
+
+  roles:
     - monitoring
 
-  post_tasks:
-    - name: Verify AD installation
+  tags: [configure, monitoring]
+
+# Phase 7: Post-Deployment Validation
+- name: Validate Deployment
+  hosts: domain_controllers
+  gather_facts: no
+  vars:
+    ansible_connection: ssh
+    ansible_shell_type: powershell
+    ansible_shell_executable: None
+
+  tasks:
+    - name: Verify NTDS service is running
       ansible.windows.win_service:
         name: NTDS
       register: ntds_service
 
+    - name: Verify DNS service is running
+      ansible.windows.win_service:
+        name: DNS
+      register: dns_service
+
+    - name: Test AD connectivity
+      ansible.windows.win_powershell:
+        script: |
+          try {
+            $domain = Get-ADDomain -ErrorAction Stop
+            Write-Output "Domain: $($domain.DNSRoot)"
+            Write-Output "Domain Controllers: $($domain.ReplicaDirectoryServers -join ', ')"
+            $true
+          } catch {
+            Write-Error "AD connectivity test failed: $_"
+            $false
+          }
+      register: ad_test
+      failed_when: not ad_test.output[0]
+
     - name: Display deployment summary
       debug:
         msg: |
-          Domain Controller {{ inventory_hostname }} deployment complete:
+          ✅ Deployment Complete for {{ inventory_hostname }}:
           - NTDS Service: {{ ntds_service.state }}
+          - DNS Service: {{ dns_service.state }}  
           - Domain: {{ domain_name }}
           - Role: {{ 'Primary DC' if is_primary_dc else 'Additional DC' }}
+          - IP Address: {{ ansible_host }}
+
+  tags: [validate]

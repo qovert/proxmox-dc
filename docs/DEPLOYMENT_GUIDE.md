@@ -1,6 +1,6 @@
-# Pure Ansible Deployment Guide
+# Ansible Deployment Guide
 
-This guide provides step-by-step instructions for deploying Windows Server 2025 Active Directory Domain Controllers on Proxmox using Pure Ansible.
+This guide provides step-by-step instructions for deploying Windows Server 2025 Active Directory Domain Controllers on Proxmox using Ansible.
 
 ## Prerequisites Checklist
 
