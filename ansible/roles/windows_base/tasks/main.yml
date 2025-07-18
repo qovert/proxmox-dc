@@ -1,0 +1,107 @@
+---
+# Windows Base Configuration Role
+- name: Set computer name
+  ansible.windows.win_hostname:
+    name: "{{ inventory_hostname }}"
+  register: hostname_change
+
+- name: Reboot if hostname changed
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: hostname_change.reboot_required
+
+- name: Configure network adapter
+  ansible.windows.win_powershell:
+    script: |
+      $adapter = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Select-Object -First 1
+      if ($adapter) {
+        Remove-NetIPAddress -InterfaceAlias $adapter.Name -Confirm:$false -ErrorAction SilentlyContinue
+        Remove-NetRoute -InterfaceAlias $adapter.Name -Confirm:$false -ErrorAction SilentlyContinue
+        New-NetIPAddress -InterfaceAlias $adapter.Name -IPAddress "{{ ansible_host }}" -PrefixLength {{ network_cidr_bits }} -DefaultGateway "{{ gateway_ip }}"
+        Set-DnsClientServerAddress -InterfaceAlias $adapter.Name -ServerAddresses "{{ dns_servers.split(' ') | join('","') }}"
+      }
+
+- name: Configure Windows Firewall for AD
+  community.windows.win_firewall_rule:
+    name: "{{ item.name }}"
+    localport: "{{ item.port }}"
+    action: allow
+    direction: in
+    protocol: "{{ item.protocol }}"
+    state: present
+    enabled: true
+  loop:
+    - { name: "AD-LDAP", port: "389", protocol: "tcp" }
+    - { name: "AD-LDAPS", port: "636", protocol: "tcp" }
+    - { name: "AD-GlobalCatalog", port: "3268", protocol: "tcp" }
+    - { name: "AD-GlobalCatalogSSL", port: "3269", protocol: "tcp" }
+    - { name: "DNS", port: "53", protocol: "tcp" }
+    - { name: "DNS-UDP", port: "53", protocol: "udp" }
+    - { name: "Kerberos", port: "88", protocol: "tcp" }
+    - { name: "Kerberos-UDP", port: "88", protocol: "udp" }
+    - { name: "RPC-Endpoint", port: "135", protocol: "tcp" }
+
+- name: Set time zone to UTC
+  community.windows.win_timezone:
+    timezone: "UTC"
+
+- name: Configure NTP
+  ansible.windows.win_powershell:
+    script: |
+      w32tm /config /manualpeerlist:"time.windows.com,0x9" /syncfromflags:manual /reliable:yes /update
+      Restart-Service w32time
+
+- name: Optimize system for server workload
+  ansible.windows.win_regedit:
+    path: "{{ item.path }}"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: "{{ item.type }}"
+  loop:
+    - path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl"
+      name: "Win32PrioritySeparation"
+      data: 24
+      type: dword
+    - path: "HKLM:\\SOFTWARE\\Microsoft\\ServerManager"
+      name: "DoNotOpenServerManagerAtLogon"
+      data: 1
+      type: dword
+
+- name: Disable unnecessary services
+  ansible.windows.win_service:
+    name: "{{ item }}"
+    start_mode: disabled
+  loop:
+    - Fax
+    - XblGameSave
+    - XblAuthManager
+    - XboxNetApiSvc
+  failed_when: false  # Services may not exist on all systems
+
+- name: Install Windows Updates
+  ansible.windows.win_updates:
+    category_names:
+      - SecurityUpdates
+      - CriticalUpdates
+      - UpdateRollups
+    reboot: true
+    reboot_timeout: 1200
+  register: update_result
+
+- name: Create Scripts directory
+  ansible.windows.win_file:
+    path: "C:\\Scripts"
+    state: directory
+
+- name: Create data disk if not exists
+  ansible.windows.win_powershell:
+    script: |
+      $disk = Get-Disk | Where-Object {$_.Size -gt 20GB -and $_.PartitionStyle -eq "RAW"} | Select-Object -First 1
+      if ($disk) {
+        Initialize-Disk -Number $disk.Number -PartitionStyle GPT
+        New-Partition -DiskNumber $disk.Number -UseMaximumSize -DriveLetter D
+        Format-Volume -DriveLetter D -FileSystem NTFS -NewFileSystemLabel "Data" -Confirm:$false
+        Write-Output "Data disk initialized as D:"
+      } else {
+        Write-Output "Data disk already configured or not found"
+      }

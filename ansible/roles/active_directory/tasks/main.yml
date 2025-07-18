@@ -1,0 +1,105 @@
+---
+# Active Directory Domain Services Role
+- name: Install AD DS Features
+  ansible.windows.win_feature:
+    name:
+      - AD-Domain-Services
+      - DNS
+      - RSAT-ADDS
+      - RSAT-AD-AdminCenter
+      - RSAT-ADDS-Tools
+      - RSAT-DNS-Server
+    state: present
+    restart: false
+  register: feature_install
+
+- name: Reboot if required after feature installation
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: feature_install.reboot_required
+
+- name: Wait for system to come back online
+  ansible.builtin.wait_for_connection:
+    timeout: 300
+  when: feature_install.reboot_required
+
+- name: Create new AD Forest (Primary DC only)
+  microsoft.ad.domain:
+    name: "{{ domain_name }}"
+    netbios_name: "{{ netbios_name }}"
+    safe_mode_password: "{{ dsrm_password }}"
+    forest_mode: "{{ forest_functional_level }}"
+    domain_mode: "{{ domain_functional_level }}"
+    create_dns_delegation: false
+    database_path: "D:\\NTDS"
+    sysvol_path: "D:\\SYSVOL"
+    log_path: "D:\\Logs"
+    reboot: true
+  when: is_primary_dc | default(false)
+  register: domain_install
+
+- name: Wait for Primary DC to come back online
+  ansible.builtin.wait_for_connection:
+    timeout: 600
+  when: is_primary_dc | default(false) and domain_install.changed
+
+- name: Wait for AD services to start on Primary DC
+  ansible.windows.win_wait_for:
+    port: 389
+    host: "{{ ansible_host }}"
+    timeout: 300
+  when: is_primary_dc | default(false)
+
+- name: Join additional DCs to domain
+  microsoft.ad.domain_controller:
+    domain_name: "{{ domain_name }}"
+    safe_mode_password: "{{ dsrm_password }}"
+    domain_admin_user: "{{ admin_username }}@{{ domain_name }}"
+    domain_admin_password: "{{ admin_password }}"
+    database_path: "D:\\NTDS"
+    sysvol_path: "D:\\SYSVOL"
+    log_path: "D:\\Logs"
+    reboot: true
+  when: not (is_primary_dc | default(false))
+  register: dc_promotion
+
+- name: Wait for additional DCs to come back online
+  ansible.builtin.wait_for_connection:
+    timeout: 600
+  when: not (is_primary_dc | default(false)) and dc_promotion.changed
+
+- name: Create Organizational Units
+  microsoft.ad.ou:
+    name: "{{ item }}"
+    path: "{{ 'OU=' + item + ',DC=' + domain_name.split('.') | join(',DC=') }}"
+    state: present
+  loop: "{{ organizational_units }}"
+  when: is_primary_dc | default(false)
+
+- name: Configure Fine-Grained Password Policy
+  microsoft.ad.group:
+    name: "Domain Password Policy Users"
+    scope: global
+    category: security
+    state: present
+  when: is_primary_dc | default(false)
+
+- name: Enable AD Recycle Bin
+  ansible.windows.win_powershell:
+    script: |
+      $domain = Get-ADDomain
+      Enable-ADOptionalFeature -Identity "Recycle Bin Feature" -Scope ForestOrConfigurationSet -Target $domain.Forest -Confirm:$false
+    error_action: silently_continue
+  when: is_primary_dc | default(false) and (enable_recycle_bin | default(true))
+
+- name: Verify domain controller installation
+  ansible.windows.win_powershell:
+    script: |
+      $dcDiag = dcdiag /test:replications
+      if ($LASTEXITCODE -eq 0) {
+        Write-Output "DC health check passed"
+      } else {
+        Write-Error "DC health check failed: $dcDiag"
+      }
+  register: dc_health
+  failed_when: dc_health.rc != 0
