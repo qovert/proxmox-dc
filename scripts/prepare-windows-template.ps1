@@ -1,17 +1,134 @@
-# Windows Server 2025 Template Preparation Script
-# This script automates the preparation of a Windows Server 2025 template for Proxmox
-# Run this script on a fresh Windows Server 2025 Core installation
+<#
+.SYNOPSIS
+    Prepares a Windows Server 2025 template for Proxmox VE virtualization platform.
 
+.DESCRIPTION
+    This comprehensive script automates the preparation of a Windows Server 2025 template
+    for Proxmox VE. It installs and configures essential components including:
+    - Proxmox Guest Agent (QEMU-GA)
+    - Windows Updates
+    - PowerShell 7
+    - OpenSSH Server with secure configuration
+    - CloudBase-Init for cloud-init functionality
+    - System optimization and hardening
+    - Sysprep for template generalization
+
+    The script is designed to run on a fresh Windows Server 2025 Core installation
+    and prepare it for conversion to a Proxmox template.
+
+.PARAMETER SSHPublicKey
+    Path to SSH public key file to be added to the Administrator's authorized_keys file for
+    passwordless SSH authentication. The file should contain a public key in OpenSSH format.
+    Example: "C:\Users\admin\.ssh\id_ed25519.pub" or "~/.ssh/id_ed25519.pub" 
+
+.PARAMETER SkipWindowsUpdates
+    Skip the Windows Updates installation phase. Use this switch to save time
+    during template preparation if updates will be handled separately.
+
+.PARAMETER SkipCloudbaseInit
+    Skip the CloudBase-Init installation and configuration. Use this switch
+    if you don't need cloud-init functionality in your template.
+
+.PARAMETER SkipSysprep
+    Skip the Sysprep generalization process. Use this switch if you want to
+    manually run Sysprep later or perform additional customizations first.
+
+.EXAMPLE
+    PS C:\> .\prepare-windows-template.ps1
+    
+    Run the script with default settings, installing all components and running Sysprep.
+
+.EXAMPLE
+    PS C:\> .\prepare-windows-template.ps1 -SSHPublicKey "C:\Users\admin\.ssh\id_ed25519.pub"
+    
+    Run the script with an SSH public key file for passwordless authentication.
+
+.EXAMPLE
+    PS C:\> .\prepare-windows-template.ps1 -SkipWindowsUpdates
+    
+    Run the script but skip Windows Updates installation to save time.
+
+.EXAMPLE
+    PS C:\> .\prepare-windows-template.ps1 -SkipCloudbaseInit -SkipSysprep
+    
+    Run the script without CloudBase-Init and without Sysprep for manual template preparation.
+
+.EXAMPLE
+    PS C:\> .\prepare-windows-template.ps1 -SSHPublicKey "~/.ssh/id_rsa.pub" -SkipWindowsUpdates -SkipSysprep
+    
+    Run the script with SSH key file, skip Windows Updates, and skip Sysprep for faster development testing.
+
+.NOTES
+    Author: Proxmox DC Project
+    Version: 1.0
+    Requires: PowerShell 5.1 or later, Administrator privileges
+    
+    Prerequisites:
+    - Fresh Windows Server 2025 Core installation
+    - Administrator privileges
+    - Internet connectivity (for downloads)
+    - Proxmox VE environment
+
+    Post-execution steps:
+    1. Verify SSH connectivity: ssh Administrator@<VM_IP>
+    2. If Sysprep was skipped, run: .\run-sysprep.ps1
+    3. Shutdown the VM
+    4. Convert VM to template in Proxmox VE
+    5. Test template by creating new VMs
+    
+    SSH Key Requirements:
+    - Use standard OpenSSH public key format (ssh-rsa, ssh-ed25519, etc.)
+    - Common locations: ~/.ssh/id_ed25519.pub, ~/.ssh/id_rsa.pub
+    - Windows paths: C:\Users\<username>\.ssh\id_ed25519.pub
+
+.LINK
+    https://github.com/qovert/proxmox-dc
+    
+.LINK
+    https://pve.proxmox.com/wiki/Windows_VirtIO_Drivers
+    
+.LINK
+    https://cloudbase.it/cloudbase-init/
+#>
+
+[CmdletBinding()]
 param(
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Path to SSH public key file for passwordless authentication"
+    )]
     [string]$SSHPublicKey = "",
+    
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Skip Windows Updates installation to save time"
+    )]
     [switch]$SkipWindowsUpdates = $false,
+    
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Skip CloudBase-Init installation and configuration"
+    )]
     [switch]$SkipCloudbaseInit = $false,
+    
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Skip Sysprep generalization process"
+    )]
     [switch]$SkipSysprep = $false
 )
 
 # Function to write timestamped log messages
 function Write-Log {
-    param($Message, $Level = "INFO")
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("INFO", "WARNING", "ERROR", "SUCCESS")]
+        [string]$Level = "INFO"
+    )
+    
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $color = switch ($Level) {
         "ERROR" { "Red" }
@@ -22,8 +139,35 @@ function Write-Log {
     Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
 }
 
-# Function to test internet connectivity
+# Function to display script usage and help
+function Show-Help {
+    Write-Host "`nWindows Server 2025 Template Preparation Script" -ForegroundColor Green
+    Write-Host "=============================================" -ForegroundColor Green
+    Write-Host "`nThis script prepares a Windows Server 2025 template for Proxmox VE." -ForegroundColor White
+    Write-Host "`nUsage Examples:" -ForegroundColor Yellow
+    Write-Host "  .\prepare-windows-template.ps1" -ForegroundColor Cyan
+    Write-Host "    - Run with default settings (installs all components)" -ForegroundColor Gray
+    Write-Host "`n  .\prepare-windows-template.ps1 -SSHPublicKey `"C:\Users\admin\.ssh\id_ed25519.pub`"" -ForegroundColor Cyan
+    Write-Host "    - Include SSH public key file for passwordless authentication" -ForegroundColor Gray
+    Write-Host "`n  .\prepare-windows-template.ps1 -SkipWindowsUpdates" -ForegroundColor Cyan
+    Write-Host "    - Skip Windows Updates to save time" -ForegroundColor Gray
+    Write-Host "`n  .\prepare-windows-template.ps1 -SkipCloudbaseInit -SkipSysprep" -ForegroundColor Cyan
+    Write-Host "    - Skip CloudBase-Init and Sysprep for manual preparation" -ForegroundColor Gray
+    Write-Host "`nFor detailed help, run: Get-Help .\prepare-windows-template.ps1 -Full" -ForegroundColor Yellow
+    Write-Host ""
+}
+
 function Test-InternetConnection {
+    <#
+    .SYNOPSIS
+        Tests internet connectivity by attempting to reach a reliable endpoint.
+    .DESCRIPTION
+        Performs a simple HTTP request to Google to verify internet connectivity.
+        Used to determine if downloads and updates can be performed.
+    .EXAMPLE
+        PS C:\> Test-InternetConnection
+        Returns $true if internet is available, $false otherwise.
+    #>
     try {
         $null = Invoke-WebRequest -Uri "https://www.google.com" -TimeoutSec 10 -UseBasicParsing
         return $true
@@ -32,12 +176,36 @@ function Test-InternetConnection {
     }
 }
 
-# Function to install MSI packages
 function Install-MsiPackage {
+    <#
+    .SYNOPSIS
+        Installs an MSI package using msiexec with proper error handling.
+    .DESCRIPTION
+        Provides a standardized way to install MSI packages with logging and error handling.
+        Supports custom arguments and wait times for installation completion.
+    .PARAMETER InstallerPath
+        Full path to the MSI installer file.
+    .PARAMETER PackageName
+        Friendly name of the package for logging purposes.
+    .PARAMETER Arguments
+        Array of arguments to pass to msiexec. Defaults to "/quiet".
+    .PARAMETER WaitSeconds
+        Seconds to wait after installation completion. Defaults to 5.
+    .EXAMPLE
+        PS C:\> Install-MsiPackage -InstallerPath "C:\temp\package.msi" -PackageName "My Package"
+        Installs the MSI package with default quiet installation.
+    #>
     param(
+        [Parameter(Mandatory = $true)]
         [string]$InstallerPath,
+        
+        [Parameter(Mandatory = $true)]
         [string]$PackageName,
+        
+        [Parameter(Mandatory = $false)]
         [string[]]$Arguments = @("/quiet"),
+        
+        [Parameter(Mandatory = $false)]
         [int]$WaitSeconds = 5
     )
     
@@ -58,10 +226,26 @@ function Install-MsiPackage {
     }
 }
 
-# Function to manage PATH environment variable
 function Add-ToPath {
+    <#
+    .SYNOPSIS
+        Adds a directory to the system PATH environment variable.
+    .DESCRIPTION
+        Safely adds a directory to the machine-level PATH environment variable
+        if it's not already present. Prevents PATH duplication.
+    .PARAMETER PathToAdd
+        Directory path to add to the PATH environment variable.
+    .PARAMETER Description
+        Friendly description of the path being added for logging.
+    .EXAMPLE
+        PS C:\> Add-ToPath -PathToAdd "C:\Program Files\MyApp" -Description "My Application"
+        Adds the specified path to the system PATH.
+    #>
     param(
+        [Parameter(Mandatory = $true)]
         [string]$PathToAdd,
+        
+        [Parameter(Mandatory = $false)]
         [string]$Description = "Path"
     )
     
@@ -82,12 +266,37 @@ function Add-ToPath {
     }
 }
 
-# Function to configure and start a service
 function Set-ServiceConfiguration {
+    <#
+    .SYNOPSIS
+        Configures and starts a Windows service with proper error handling.
+    .DESCRIPTION
+        Provides a standardized way to configure service startup type and start
+        services with comprehensive logging and error handling.
+    .PARAMETER ServiceName
+        Name of the Windows service to configure.
+    .PARAMETER StartupType
+        Service startup type (Automatic, Manual, Disabled). Defaults to "Automatic".
+    .PARAMETER StartService
+        Whether to start the service after configuration. Defaults to $true.
+    .PARAMETER Description
+        Friendly description of the service for logging purposes.
+    .EXAMPLE
+        PS C:\> Set-ServiceConfiguration -ServiceName "sshd" -Description "SSH Server"
+        Configures the SSH service to start automatically and starts it.
+    #>
     param(
+        [Parameter(Mandatory = $true)]
         [string]$ServiceName,
+        
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("Automatic", "Manual", "Disabled")]
         [string]$StartupType = "Automatic",
+        
+        [Parameter(Mandatory = $false)]
         [bool]$StartService = $true,
+        
+        [Parameter(Mandatory = $false)]
         [string]$Description = ""
     )
     
@@ -111,29 +320,97 @@ function Set-ServiceConfiguration {
     }
 }
 
-# Function to manage SSH public keys
 function Set-SSHPublicKey {
+    <#
+    .SYNOPSIS
+        Adds an SSH public key from a file to the Administrator's authorized_keys file.
+    .DESCRIPTION
+        Safely reads an SSH public key from a file and adds it to the authorized_keys file 
+        for passwordless SSH authentication. Creates the file if it doesn't exist and sets proper permissions.
+    .PARAMETER PublicKeyPath
+        Path to the SSH public key file in OpenSSH format (e.g., "C:\Users\admin\.ssh\id_ed25519.pub").
+    .PARAMETER AuthorizedKeysPath
+        Path to the authorized_keys file. Defaults to the Windows OpenSSH location.
+    .EXAMPLE
+        PS C:\> Set-SSHPublicKey -PublicKeyPath "C:\Users\admin\.ssh\id_ed25519.pub"
+        Reads the SSH public key from the file and adds it to the authorized_keys file.
+    #>
     param(
-        [string]$PublicKey,
+        [Parameter(Mandatory = $false)]
+        [string]$PublicKeyPath,
+        
+        [Parameter(Mandatory = $false)]
         [string]$AuthorizedKeysPath = "C:\ProgramData\ssh\administrators_authorized_keys"
     )
     
-    if (-not $PublicKey) {
+    if (-not $PublicKeyPath) {
         return $true
+    }
+    
+    # Expand any environment variables or relative paths
+    $PublicKeyPath = [System.Environment]::ExpandEnvironmentVariables($PublicKeyPath)
+    if ($PublicKeyPath.StartsWith("~/")) {
+        if ($env:USERPROFILE) {
+            # Windows
+            $PublicKeyPath = $PublicKeyPath.Replace("~/", "$env:USERPROFILE\")
+        } elseif ($env:HOME) {
+            # Linux/Unix
+            $PublicKeyPath = $PublicKeyPath.Replace("~/", "$env:HOME/")
+        }
+    }
+    
+    # Check if the public key file exists
+    if (-not (Test-Path $PublicKeyPath)) {
+        Write-Log "SSH public key file not found: $PublicKeyPath" "ERROR"
+        return $false
+    }
+    
+    # Read the public key from the file
+    try {
+        $publicKeyContent = Get-Content -Path $PublicKeyPath -Raw -ErrorAction Stop
+        $publicKeyContent = $publicKeyContent.Trim()
+        
+        # Validate the key format
+        $validKeyTypes = @('ssh-rsa', 'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')
+        $keyValid = $false
+        foreach ($keyType in $validKeyTypes) {
+            if ($publicKeyContent.StartsWith($keyType)) {
+                $keyValid = $true
+                break
+            }
+        }
+        
+        if (-not $keyValid) {
+            Write-Log "Invalid SSH public key format in file: $PublicKeyPath" "ERROR"
+            Write-Log "Expected format: 'ssh-rsa AAAAB3...' or 'ssh-ed25519 AAAAB3...'" "ERROR"
+            return $false
+        }
+        
+        Write-Log "Successfully read SSH public key from: $PublicKeyPath" "SUCCESS"
+        
+    } catch {
+        Write-Log "Failed to read SSH public key file: $($_.Exception.Message)" "ERROR"
+        return $false
     }
     
     try {
         # Ensure the authorized_keys file exists
         if (-not (Test-Path $AuthorizedKeysPath)) {
+            # Create the directory if it doesn't exist
+            $parentDir = Split-Path -Parent $AuthorizedKeysPath
+            if (-not (Test-Path $parentDir)) {
+                New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+            }
+            
             New-Item -ItemType File -Path $AuthorizedKeysPath -Force | Out-Null
             icacls $AuthorizedKeysPath /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
-            Write-Log "Created SSH authorized_keys file" "SUCCESS"
+            Write-Log "Created SSH authorized_keys file: $AuthorizedKeysPath" "SUCCESS"
         }
         
         # Check if key already exists
         $existingKeys = Get-Content $AuthorizedKeysPath -ErrorAction SilentlyContinue
-        if ($existingKeys -notcontains $PublicKey) {
-            Add-Content -Path $AuthorizedKeysPath -Value $PublicKey
+        if ($existingKeys -notcontains $publicKeyContent) {
+            Add-Content -Path $AuthorizedKeysPath -Value $publicKeyContent
             Write-Log "SSH public key added to authorized_keys" "SUCCESS"
         } else {
             Write-Log "SSH public key already exists in authorized_keys" "SUCCESS"
@@ -146,11 +423,31 @@ function Set-SSHPublicKey {
     }
 }
 
-# Function to download files with retry logic
 function Get-FileFromUrl {
+    <#
+    .SYNOPSIS
+        Downloads a file from a URL with retry logic and error handling.
+    .DESCRIPTION
+        Provides robust file download functionality with automatic retry on failure.
+        Includes proper error handling and logging for download operations.
+    .PARAMETER Url
+        URL of the file to download.
+    .PARAMETER OutputPath
+        Local path where the downloaded file should be saved.
+    .PARAMETER MaxRetries
+        Maximum number of download attempts. Defaults to 3.
+    .EXAMPLE
+        PS C:\> Get-FileFromUrl -Url "https://example.com/file.msi" -OutputPath "C:\temp\file.msi"
+        Downloads the file with default retry logic.
+    #>
     param(
+        [Parameter(Mandatory = $true)]
         [string]$Url,
+        
+        [Parameter(Mandatory = $true)]
         [string]$OutputPath,
+        
+        [Parameter(Mandatory = $false)]
         [int]$MaxRetries = 3
     )
     
@@ -168,6 +465,49 @@ function Get-FileFromUrl {
             Write-Log "Download attempt $i failed, retrying..." "WARNING"
             Start-Sleep -Seconds 5
         }
+    }
+}
+
+# Script initialization and validation
+Write-Host "`nWindows Server 2025 Template Preparation Script" -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
+
+# Check if running as administrator
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "`nERROR: This script must be run as Administrator!" -ForegroundColor Red
+    Write-Host "Please run PowerShell as Administrator and try again.`n" -ForegroundColor Yellow
+    Show-Help
+    exit 1
+}
+
+# Display script parameters
+Write-Log "Starting Windows Server 2025 Template Preparation" "SUCCESS"
+Write-Log "Script parameters:" "INFO"
+Write-Log "  - SSH Public Key File: $(if ($SSHPublicKey) { $SSHPublicKey } else { 'Not provided' })" "INFO"
+Write-Log "  - Skip Windows Updates: $SkipWindowsUpdates" "INFO"
+Write-Log "  - Skip CloudBase-Init: $SkipCloudbaseInit" "INFO"
+Write-Log "  - Skip Sysprep: $SkipSysprep" "INFO"
+
+# Validate SSH public key file if provided
+if ($SSHPublicKey) {
+    # Expand any environment variables or relative paths
+    $expandedPath = [System.Environment]::ExpandEnvironmentVariables($SSHPublicKey)
+    if ($expandedPath.StartsWith("~/")) {
+        if ($env:USERPROFILE) {
+            # Windows
+            $expandedPath = $expandedPath.Replace("~/", "$env:USERPROFILE\")
+        } elseif ($env:HOME) {
+            # Linux/Unix
+            $expandedPath = $expandedPath.Replace("~/", "$env:HOME/")
+        }
+    }
+    
+    if (-not (Test-Path $expandedPath)) {
+        Write-Log "WARNING: SSH public key file not found: $expandedPath" "WARNING"
+        Write-Log "The script will continue but SSH key-based authentication will not be configured." "WARNING"
+    } else {
+        Write-Log "SSH public key file found: $expandedPath" "SUCCESS"
     }
 }
 
@@ -303,7 +643,7 @@ try {
             Write-Log "SSH configuration file exists: $sshdConfigPath" "SUCCESS"
             
             # Add SSH public key if provided
-            Set-SSHPublicKey -PublicKey $SSHPublicKey
+            Set-SSHPublicKey -PublicKeyPath $SSHPublicKey
         } elseif ($sshService -and (Test-Path $sshdConfigPath)) {
             Write-Log "OpenSSH Server is installed but not running, starting service..." "INFO"
             Write-Log "SSH service status: $($sshService.Status)" "INFO"
@@ -313,7 +653,7 @@ try {
                 # Configure and start the SSH service using utility function
                 if (Set-ServiceConfiguration -ServiceName $sshServiceName -Description "SSH Server") {
                     # Add SSH public key if provided
-                    Set-SSHPublicKey -PublicKey $SSHPublicKey
+                    Set-SSHPublicKey -PublicKeyPath $SSHPublicKey
                     
                     # Verify the service is now running
                     $updatedService = Get-Service -Name $sshServiceName
@@ -395,94 +735,44 @@ try {
             }
             
             # Configure SSH for key-based authentication
-            Set-SSHPublicKey -PublicKey $SSHPublicKey
+            Set-SSHPublicKey -PublicKeyPath $SSHPublicKey
             
-            # Download and apply SSH configuration from GitHub
-            Write-Log "Downloading SSH configuration from GitHub..."
-            $sshConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/sshd_config"
-            $tempSshConfig = "$env:TEMP\sshd_config"
-            
-            if (Get-FileFromUrl -Url $sshConfigUrl -OutputPath $tempSshConfig) {
-                Copy-Item -Path $tempSshConfig -Destination $sshdConfigPath -Force
-                Write-Log "SSH configuration file downloaded and applied" "SUCCESS"
+            # Download and apply SSH configuration from GitHub if internet is available
+            if (Test-InternetConnection) {
+                Write-Log "Downloading SSH configuration from GitHub..."
+                $sshConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/sshd_config"
+                $tempSshConfig = "$env:TEMP\sshd_config"
                 
-                # Test SSH configuration before starting service
-                Write-Log "Testing SSH configuration..."
-                $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
-                if (Test-Path $sshdExe) {
-                    try {
-                        # Test SSH configuration syntax
-                        $configTest = & $sshdExe -t 2>&1
-                        if ($LASTEXITCODE -eq 0) {
-                            Write-Log "SSH configuration test passed" "SUCCESS"
-                        } else {
-                            Write-Log "SSH configuration test failed: $configTest" "ERROR"
-                            Write-Log "Downloading minimal configuration as fallback..." "INFO"
-                            
-                            # Download minimal configuration as fallback
-                            $minimalConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/sshd_config_minimal"
-                            $tempMinimalConfig = "$env:TEMP\sshd_config_minimal"
-                            
-                            if (Get-FileFromUrl -Url $minimalConfigUrl -OutputPath $tempMinimalConfig) {
-                                Copy-Item -Path $tempMinimalConfig -Destination $sshdConfigPath -Force
-                                Write-Log "Minimal SSH configuration downloaded and applied" "SUCCESS"
+                if (Get-FileFromUrl -Url $sshConfigUrl -OutputPath $tempSshConfig) {
+                    Copy-Item -Path $tempSshConfig -Destination $sshdConfigPath -Force
+                    Write-Log "SSH configuration file downloaded and applied" "SUCCESS"
+                    
+                    # Test SSH configuration before starting service
+                    Write-Log "Testing SSH configuration..."
+                    $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
+                    if (Test-Path $sshdExe) {
+                        try {
+                            # Test SSH configuration syntax
+                            $configTest = & $sshdExe -t 2>&1
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Log "SSH configuration test passed" "SUCCESS"
                             } else {
-                                Write-Log "Failed to download minimal SSH configuration, creating local fallback..." "WARNING"
-                                # Create a minimal working configuration as last resort
-                                $minimalConfig = @"
-Port 22
-PubkeyAuthentication yes
-AuthorizedKeysFile .ssh/authorized_keys
-Match Group administrators
-       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
-PasswordAuthentication no
-LogLevel INFO
-Subsystem sftp sftp-server.exe
-"@
-                                $minimalConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
-                                Write-Log "Created local minimal SSH configuration" "SUCCESS"
+                                Write-Log "SSH configuration test failed: $configTest" "ERROR"
+                                Write-Log "SSH configuration will need to be manually configured" "INFO"
                             }
+                        } catch {
+                            Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
                         }
-                    } catch {
-                        Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
+                    } else {
+                        Write-Log "SSH executable not found, configuration applied but cannot test" "WARNING"
                     }
                 } else {
-                    Write-Log "SSH executable not found, configuration applied but cannot test" "WARNING"
+                    Write-Log "Failed to download SSH configuration from GitHub" "WARNING"
+                    Write-Log "SSH configuration will need to be manually configured" "INFO"
                 }
             } else {
-                Write-Log "Failed to download SSH configuration from GitHub, creating local configuration..." "WARNING"
-                # Fallback to local configuration if download fails
-                $localSshConfig = @"
-# Windows Server 2025 SSH Configuration
-Port 22
-
-# Authentication
-PubkeyAuthentication yes
-AuthorizedKeysFile .ssh/authorized_keys
-
-# For administrators, use the administrators_authorized_keys file
-Match Group administrators
-       AuthorizedKeysFile C:/ProgramData/ssh/administrators_authorized_keys
-
-# Security settings
-PasswordAuthentication no
-PermitEmptyPasswords no
-ChallengeResponseAuthentication no
-
-# Logging
-LogLevel INFO
-
-# Connection settings
-ClientAliveInterval 300
-ClientAliveCountMax 2
-MaxAuthTries 3
-MaxSessions 10
-
-# Subsystem for SFTP
-Subsystem sftp sftp-server.exe
-"@
-                $localSshConfig | Out-File -FilePath $sshdConfigPath -Encoding UTF8 -Force
-                Write-Log "Created local SSH configuration as fallback" "SUCCESS"
+                Write-Log "No internet connectivity detected - skipping SSH configuration download" "INFO"
+                Write-Log "SSH configuration will need to be manually configured after template deployment" "INFO"
             }
             
             # Configure PowerShell as default shell (using registry method)
@@ -545,17 +835,17 @@ Subsystem sftp sftp-server.exe
             $cloudbaseExecutable = "$cloudbaseInstallPath\Python\Scripts\cloudbase-init.exe"
             $cloudbaseConfigPath = "$cloudbaseInstallPath\conf\cloudbase-init.conf"
             
-            # Download CloudBase-Init configuration from GitHub
-            Write-Log "Downloading CloudBase-Init configuration from GitHub..."
-            $cloudbaseConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/cloudbase-init.conf"
-            $tempCloudbaseConfig = "$env:TEMP\cloudbase-init.conf"
-            
-            # Function to create CloudBase-Init configuration
-            function Set-CloudbaseConfig {
-                param($ConfigPath, $ConfigSource, $IsUrl = $false)
+            # Download CloudBase-Init configuration from GitHub if internet is available
+            if (Test-InternetConnection) {
+                Write-Log "Downloading CloudBase-Init configuration from GitHub..."
+                $cloudbaseConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/cloudbase-init.conf"
+                $tempCloudbaseConfig = "$env:TEMP\cloudbase-init.conf"
                 
-                if ($IsUrl) {
-                    if (Get-FileFromUrl -Url $ConfigSource -OutputPath $tempCloudbaseConfig) {
+                # Function to download CloudBase-Init configuration
+                function Get-CloudbaseConfig {
+                    param($ConfigPath, $ConfigUrl)
+                    
+                    if (Get-FileFromUrl -Url $ConfigUrl -OutputPath $tempCloudbaseConfig) {
                         Copy-Item -Path $tempCloudbaseConfig -Destination $ConfigPath -Force
                         Write-Log "CloudBase-Init configuration downloaded and applied from GitHub" "SUCCESS"
                         return $true
@@ -563,32 +853,9 @@ Subsystem sftp sftp-server.exe
                         Write-Log "Failed to download CloudBase-Init configuration from GitHub" "WARNING"
                         return $false
                     }
-                } else {
-                    # Local fallback configuration
-                    $localConfig = @"
-[DEFAULT]
-username=Administrator
-groups=Administrators
-inject_user_password=true
-config_drive_raw_hhd=true
-config_drive_cdrom=true
-config_drive_vfat=true
-bsdtar_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\bsdtar.exe
-mtools_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\
-verbose=true
-debug=true
-logdir=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\
-logfile=cloudbase-init.log
-default_log_levels=comtypes=INFO,suds=INFO,iso8601=WARN,requests=WARN
-logging_serial_port_settings=COM1,115200,N,8
-mtu_use_dhcp_config=true
-ntp_use_dhcp_config=true
-local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
-"@
-                    $localConfig | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force
-                    Write-Log "CloudBase-Init configuration created locally as fallback" "SUCCESS"
-                    return $true
                 }
+            } else {
+                Write-Log "No internet connectivity detected - skipping CloudBase-Init configuration download" "INFO"
             }
             
             # Check if CloudBase-Init is already installed
@@ -596,12 +863,14 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
                 if (Test-Path $cloudbaseExecutable) {
                     Write-Log "CloudBase-Init is already installed" "SUCCESS"
                     
-                    # Ensure configuration is properly set up
+                    # Ensure configuration is properly set up if internet is available
                     if (-not (Test-Path $cloudbaseConfigPath)) {
-                        Write-Log "CloudBase-Init configuration missing, downloading from GitHub..." "WARNING"
-                        if (-not (Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource $cloudbaseConfigUrl -IsUrl $true)) {
-                            # Fallback to local configuration if download fails
-                            Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource "" -IsUrl $false
+                        if (Test-InternetConnection) {
+                            Write-Log "CloudBase-Init configuration missing, downloading from GitHub..." "WARNING"
+                            Get-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigUrl $cloudbaseConfigUrl
+                        } else {
+                            Write-Log "CloudBase-Init configuration missing and no internet connectivity" "WARNING"
+                            Write-Log "CloudBase-Init configuration will need to be manually configured" "INFO"
                         }
                     } else {
                         Write-Log "CloudBase-Init configuration already exists" "SUCCESS"
@@ -611,20 +880,22 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
                     throw "CloudBase-Init incomplete installation"
                 }
             } else {
-                Write-Log "CloudBase-Init not found, installing..."
-                
-                $cloudbaseUrl = "https://cloudbase.it/downloads/CloudbaseInitSetup_1_1_4_x64.msi"
-                $cloudbaseInstaller = "$env:TEMP\CloudbaseInit.msi"
-                
-                if (Get-FileFromUrl -Url $cloudbaseUrl -OutputPath $cloudbaseInstaller) {
-                    if (Install-MsiPackage -InstallerPath $cloudbaseInstaller -PackageName "CloudBase-Init" -Arguments @("/quiet", "/qn")) {
-                        # Download and configure CloudBase-Init from GitHub
-                        if (-not (Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource $cloudbaseConfigUrl -IsUrl $true)) {
-                            # Fallback to local configuration if download fails
-                            Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigSource "" -IsUrl $false
+                if (Test-InternetConnection) {
+                    Write-Log "CloudBase-Init not found, installing..."
+                    
+                    $cloudbaseUrl = "https://cloudbase.it/downloads/CloudbaseInitSetup_1_1_4_x64.msi"
+                    $cloudbaseInstaller = "$env:TEMP\CloudbaseInit.msi"
+                    
+                    if (Get-FileFromUrl -Url $cloudbaseUrl -OutputPath $cloudbaseInstaller) {
+                        if (Install-MsiPackage -InstallerPath $cloudbaseInstaller -PackageName "CloudBase-Init" -Arguments @("/quiet", "/qn")) {
+                            # Download and configure CloudBase-Init from GitHub
+                            Get-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigUrl $cloudbaseConfigUrl
+                            Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
                         }
-                        Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
                     }
+                } else {
+                    Write-Log "No internet connectivity detected - skipping CloudBase-Init installation" "INFO"
+                    Write-Log "CloudBase-Init will need to be manually installed and configured" "INFO"
                 }
             }
         } catch {
@@ -640,14 +911,33 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
         # Set performance options for background services
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Value 24
         
-        # Disable unnecessary services
-        $servicesToDisable = @("Fax", "XblGameSave", "XblAuthManager", "XboxNetApiSvc")
+        # Disable unnecessary services (services that are typically unneeded for server templates)
+        $servicesToDisable = @(
+            "WSearch",          # Windows Search - not needed for headless servers
+            "SysMain",          # Superfetch/Prefetch - not beneficial for VMs
+            "Themes",           # Themes service - not needed for Server Core
+            "AudioSrv",         # Windows Audio - typically not needed for servers
+            "AudioEndpointBuilder", # Audio Endpoint Builder - not needed for servers
+            "Audiosrv",         # Windows Audio Service - not needed for servers
+            "WbioSrvc",         # Windows Biometric Service - not needed for servers
+            "TabletInputService", # Tablet PC Input Service - not needed for servers
+            "SCardSvr",         # Smart Card - only needed if using smart cards
+            "ScDeviceEnum",     # Smart Card Device Enumeration - not typically needed
+            "WerSvc",           # Windows Error Reporting - optional for templates
+            "DiagTrack"         # Connected User Experiences and Telemetry - privacy
+        )
+        
         foreach ($service in $servicesToDisable) {
             try {
-                Set-Service -Name $service -StartupType Disabled -ErrorAction SilentlyContinue
-                Write-Log "Disabled service: $service"
+                $svc = Get-Service -Name $service -ErrorAction SilentlyContinue
+                if ($svc) {
+                    Set-Service -Name $service -StartupType Disabled -ErrorAction SilentlyContinue
+                    Write-Log "Disabled service: $service ($($svc.DisplayName))"
+                } else {
+                    Write-Log "Service $service not found (may not be installed in Server Core)"
+                }
             } catch {
-                Write-Log "Service $service not found or already disabled"
+                Write-Log "Failed to disable service $service`: $($_.Exception.Message)" "WARNING"
             }
         }
         
@@ -778,11 +1068,19 @@ local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScri
     } else {
         Write-Log "Skipping Sysprep as requested" "WARNING"
         Write-Log "Template preparation completed successfully!" "SUCCESS"
-        Write-Log "Remember to run comprehensive Sysprep using run-sysprep.ps1 before converting to template."
+        Write-Log "Next steps:" "INFO"
+        Write-Log "  1. Test SSH connectivity: ssh Administrator@<VM_IP>" "INFO"
+        Write-Log "  2. Run Sysprep manually: .\run-sysprep.ps1" "INFO"
+        Write-Log "  3. Shutdown VM after Sysprep completes" "INFO"
+        Write-Log "  4. Convert VM to template in Proxmox VE" "INFO"
+        Write-Log "  5. Test template by creating new VMs with cloud-init" "INFO"
+        Write-Log "Remember to run comprehensive Sysprep using run-sysprep.ps1 before converting to template." "WARNING"
     }
 
 } catch {
     Write-Log "Template preparation failed: $($_.Exception.Message)" "ERROR"
     Write-Log "Stack trace: $($_.ScriptStackTrace)" "ERROR"
+    Write-Log "For help with this script, run: Get-Help .\prepare-windows-template.ps1 -Full" "INFO"
+    Write-Log "Or visit: https://github.com/qovert/proxmox-dc" "INFO"
     exit 1
 }

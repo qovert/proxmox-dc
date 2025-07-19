@@ -39,13 +39,17 @@
         cores: "{{ dc_cpu_cores }}"
         sockets: "{{ dc_cpu_sockets }}"
         memory: "{{ dc_memory_mb }}"
-        bios: seabios
-        boot: order=scsi0
+        bios: "{{ dc_bios_type }}"
+        machine: "{{ dc_machine_type }}"
+        cpu: "{{ dc_cpu_type }}"
+        boot: order=virtio0
         net:
           net0: "virtio,bridge={{ network_bridge }},ip={{ item.ip }}/{{ network_cidr_bits }},gw={{ gateway_ip }}"
-        scsi:
-          scsi0: "{{ storage_pool }}:{{ os_disk_size | regex_replace('G', '') }}"
-          scsi1: "{{ storage_pool }}:{{ data_disk_size | regex_replace('G', '') }}"
+        # Disks are inherited from template when cloning
+        # scsi:
+        #   scsi0: "{{ storage_pool }}:{{ os_disk_size | regex_replace('G', '') }}"
+        #   scsi1: "{{ storage_pool }}:{{ data_disk_size | regex_replace('G', '') }}"
+        # Cloud-init configuration (requires cloud-init to be installed in template)
         ciuser: "{{ admin_username }}"
         cipassword: "{{ admin_password }}"
         sshkeys: "{{ ssh_public_key }}"

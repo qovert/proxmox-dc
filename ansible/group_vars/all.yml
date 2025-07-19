@@ -1,6 +1,13 @@
 # Ansible Group Variables
 # Main configuration for Windows Server 2025 AD deployment
 
+# Template Compatibility Notes:
+# - Template uses UEFI boot (ovmf) with TPM 2.0 and EFI disk
+# - Primary disk is virtio0 (32GB) not scsi0
+# - CPU type: x86-64-v2-AES, Machine: pc-q35-9.2+pve1
+# - Requires cloud-init to be installed in template for network configuration
+# - Boot order: virtio0 (not net0 as in template - will be changed after clone)
+
 # Proxmox Configuration
 proxmox_api_url: "https://proxmox.example.com:8006/api2/json"
 proxmox_user: "ansible@pve"
@@ -21,11 +28,18 @@ dc_vmid_start: 200
 dc_cpu_cores: 4
 dc_cpu_sockets: 1
 dc_memory_mb: 8192
+dc_cpu_type: "x86-64-v2-AES"  # Match template CPU type
+dc_machine_type: "pc-q35-9.2+pve1"  # Match template machine type
+dc_bios_type: "ovmf"  # UEFI boot for Windows Server 2025
 
 # Storage Configuration
 storage_pool: "local-lvm"
-os_disk_size: "80G"
-data_disk_size: "40G"
+# Template uses virtio0 (32GB) - disk sizes are inherited from template when cloning
+# Only uncomment and specify if you need to:
+# - Resize existing disks after clone (requires additional tasks)
+# - Add additional disks beyond what's in the template
+# os_disk_size: "80G"  # Only needed if resizing virtio0 after clone
+# data_disk_size: "40G"  # Only needed if adding additional disks
 
 # Network Configuration
 network_bridge: "vmbr0"
