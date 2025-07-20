@@ -1,401 +1,240 @@
 # Windows Server 2025 Active Directory Domain Controller on Proxmox
 
-This project uses **Ansible** to deploy Windows Server 2025 Active Directory Domain Controllers on Proxmox VE with comprehensive post-installation configuration.
+An **Ansible-based infrastructure-as-code solution** for deploying and managing enterprise-grade Windows Server 2025 Active Directory Domain Controllers on Proxmox VE.
 
-## Features
+## 🎯 Project Goals
 
-- **Ansible Implementation**: Single tool for both infrastructure provisioning and configuration
-- **Multiple Domain Controllers**: Support for deploying multiple DCs for redundancy
-- **Comprehensive Configuration**: Automated AD DS installation and configuration
-- **Security Hardening**: Built-in security configurations and policies
-- **Monitoring & Health Checks**: Automated health monitoring and reporting
-- **DNS Configuration**: Complete DNS setup with forwarders and zones
-- **Modular Design**: Reusable Ansible roles for different environments
-- **Template-Based Deployment**: Efficient VM provisioning from prepared templates
+This project solves the challenge of **consistent, repeatable Active Directory deployments** in virtualized environments by providing:
 
-## Prerequisites
+- **Single-tool automation** using pure Ansible (no multi-tool complexity)
+- **Production-ready security** with SSH key-based authentication and encrypted secrets
+- **Enterprise-grade monitoring** with automated health checks and reporting
+- **Scalable architecture** supporting multiple domain controllers with proper redundancy
+- **Template-based efficiency** for rapid deployment across environments
 
-### Proxmox Environment
+## 🏗️ Architecture Overview
 
-- Proxmox VE cluster with sufficient resources
-- Windows Server 2025 template properly configured (see [Template Preparation Guide](docs/template-preparation.md))
-- Storage pool with adequate space (120GB+ per DC)
-- Network bridge configured for domain controllers
+### Design Philosophy
 
-### Ansible Setup
+- **Infrastructure as Code**: All infrastructure and configuration defined in version control
+- **Modular Design**: Reusable Ansible roles for different components and environments
+- **Security First**: Modern SSH-based authentication, encrypted secrets, security hardening
+- **Production Focus**: Comprehensive monitoring, backup strategies, and operational excellence
+- **Single Tool**: Pure Ansible approach eliminates tool complexity and state management issues
 
-- Ansible >= 2.9 with required collections
-- SSH access to Proxmox API
-- Network connectivity to Proxmox hosts
+### Technology Stack
 
-### Network Requirements
-
-- Dedicated network segment for domain controllers
-- Static IP addresses reserved for DCs
-- DNS forwarders configured
-- Firewall rules for AD traffic
-
-## Windows Server 2025 Template Preparation
-
-Creating a proper Windows Server 2025 template is crucial for successful deployment. This template will be used for all domain controller VMs.
-
-📖 **For detailed template preparation instructions, see [Template Preparation Guide](docs/template-preparation.md)**
-
-### Quick Template Checklist
-
-Before deployment, ensure your Windows Server 2025 template has:
-
-- [ ] Windows Server 2025 Standard (Server Core recommended)
-- [ ] Proxmox Guest Agent installed and configured  
-- [ ] OpenSSH Server configured with key-based authentication
-- [ ] PowerShell 7 installed
-- [ ] CloudBase-Init installed and configured
-- [ ] System properly sysprepped and converted to template
-- [ ] Template tested with manual cloning
-
-> **Important**: The template must be properly prepared with SSH access and CloudBase-Init for automation to work correctly.
-
-## Quick Start
-
-### 1. Prepare Environment
-
-```bash
-# Clone the repository
-git clone https://github.com/qovert/proxmox-dc.git
-cd proxmox-dc
-
-# Set up Ansible environment
-./setup-ansible.sh
+```text
+🔧 Automation:     Ansible (infrastructure + configuration)
+🖥️  Virtualization: Proxmox VE
+💾 Operating System: Windows Server 2025 (Server Core)
+🌐 Networking:     OpenSSH + SSH keys (no WinRM)
+🔐 Security:       Ansible Vault + SSH authentication
+📊 Monitoring:     PowerShell-based health checks
 ```
-
-### 2. Generate SSH Key Pair
-
-```bash
-# Generate SSH key pair for the project
-ssh-keygen -t ed25519 -f ~/.ssh/proxmox-ad -C "proxmox-ad-deployment"
-
-# Add to SSH agent
-ssh-add ~/.ssh/proxmox-ad
-
-# Copy public key content for configuration
-cat ~/.ssh/proxmox-ad.pub
-```
-
-### 3. Configure Variables
-
-```bash
-# Edit main configuration
-nano ansible/group_vars/all.yml
-
-# Edit sensitive variables
-nano ansible/group_vars/vault.yml
-
-# Encrypt the vault file
-ansible-vault encrypt ansible/group_vars/vault.yml
-```
-
-### 4. Deploy Infrastructure
-
-```bash
-# Full deployment (provision VMs + configure AD)
-./deploy.sh
-
-# Or step-by-step:
-./deploy.sh provision   # Just create VMs
-./deploy.sh configure   # Just configure AD
-./deploy.sh validate    # Validate deployment
-```
-
-### 5. Cleanup (if needed)
-
-```bash
-# Remove all VMs and resources
-./deploy.sh cleanup
-```
-
-## Architecture
-
-This project uses **Ansible** for both infrastructure provisioning and configuration management.
 
 ### Deployment Flow
 
 ```text
-1. VM Provisioning (Ansible)
-   ├── Create VMs from template using proxmox_kvm module
+1. Environment Setup (setup-ansible.sh)
+   ├── Install Ansible and required collections
+   ├── Create directory structure
+   └── Validate role dependencies
+
+2. Infrastructure Provisioning (deploy.sh)
+   ├── Create VMs from Windows Server 2025 template
    ├── Configure networking and storage
-   └── Start VMs and wait for SSH connectivity
+   └── Initialize SSH connectivity
 
-2. Dynamic Inventory (Ansible)
-   ├── Add VMs to Ansible inventory dynamically
-   └── Set up connection parameters and variables
-
-3. Configuration (Ansible Roles)
-   ├── windows_base: System preparation and hardening
-   ├── active_directory: AD DS installation and forest creation
-   ├── dns_server: DNS configuration with external scripts
+3. Configuration Management (Ansible Roles)
+   ├── windows_base: System hardening and optimization
+   ├── active_directory: AD DS installation and forest setup
+   ├── dns_server: DNS configuration with external forwarders
    └── monitoring: Health checks and performance monitoring
 
-4. Validation (Ansible)
-   ├── Verify services are running
-   ├── Test AD connectivity
-   └── Generate deployment summary
+4. Operational Excellence
+   ├── Automated health monitoring and reporting
+   ├── Backup configuration and scheduling
+   └── Security policies and compliance
 ```
 
-### Key Benefits
+## 📁 Repository Structure
 
-- **Single Tool**: Use only Ansible for everything
-- **Better Error Recovery**: Built-in retry mechanisms and rollback
-- **Idempotent Operations**: Safe to re-run multiple times
-- **Dynamic Inventory**: VMs automatically added during provisioning
-- **Unified Debugging**: Consistent troubleshooting approach
-- **Modular Design**: Reusable roles for different environments
+```text
+proxmox-dc/
+├── 🎯 ENTRY POINTS
+│   ├── setup-ansible.sh       # One-time environment setup
+│   ├── deploy.sh              # Deployment orchestration
+│   └── README.md              # This file - project overview
+│
+├── 🎭 ANSIBLE AUTOMATION
+│   └── ansible/
+│       ├── site.yml           # Main deployment playbook
+│       ├── cleanup-vms.yml    # Infrastructure teardown
+│       ├── ansible.cfg        # Ansible configuration
+│       ├── group_vars/        # Configuration management
+│       │   ├── all.yml        # Main configuration variables
+│       │   └── vault.yml      # Encrypted secrets (create this)
+│       └── roles/             # Modular configuration roles
+│           ├── windows_base/  # Base system configuration
+│           ├── active_directory/ # AD DS installation
+│           ├── dns_server/    # DNS setup with external scripts
+│           └── monitoring/    # Health checks and reporting
+│
+├── 📜 POWERSHELL SCRIPTS
+│   └── scripts/
+│       ├── prepare-windows-template.ps1  # Template automation
+│       ├── configure-adds.ps1            # AD DS installation
+│       ├── initial-setup.ps1             # System preparation
+│       ├── post-config.ps1               # Post-deployment tasks
+│       └── SCRIPT_DOCUMENTATION.md       # Script reference
+│
+├── ⚙️ CONFIGURATIONS
+│   └── configs/
+│       ├── sshd_config           # OpenSSH server configuration
+│       ├── sshd_config_minimal   # SSH fallback configuration
+│       └── cloudbase-init.conf   # Cloud-init configuration
+│
+└── 📚 DOCUMENTATION
+    └── docs/
+        ├── README.md                 # Documentation navigation
+        ├── usage-guide.md            # Complete deployment guide
+        └── template-preparation.md   # Template setup instructions
+```
+
+## 🚀 Key Features & Benefits
+
+### Why This Approach?
+
+#### Single Tool Simplicity
+
+- Pure Ansible approach eliminates multi-tool complexity
+- No Terraform state management or tool integration issues
+- Consistent debugging and troubleshooting experience
+
+#### Modern Security
+
+- SSH key-based authentication (industry standard)
+- No legacy WinRM dependencies or password management
+- Encrypted secrets with Ansible Vault
+- Security hardening built into all roles
+
+#### Production Ready
+
+- Comprehensive error handling and retry mechanisms
+- Automated health monitoring and alerting
+- Backup strategies and disaster recovery procedures
+- Ansible-lint compliance and code quality standards
+
+#### Operational Excellence
+
+- Idempotent operations (safe to re-run)
+- Dynamic inventory management
+- Multiple deployment modes (provision, configure, validate)
+- Comprehensive logging and diagnostics
 
 ### Enterprise-Grade Features
 
 - **Professional Development**: Full PowerShell IDE support with IntelliSense
-- **Production Ready**: Ansible-lint compliance and comprehensive error handling
-- **Maintainable**: External scripts can be unit tested independently
-- **Scalable**: Modular role-based architecture for different environments
-- **Secure**: Modern SSH-based authentication instead of legacy WinRM
+- **Maintainable Code**: External PowerShell scripts can be unit tested independently
+- **Scalable Architecture**: Modular role-based design for different environments
+- **Secure Communications**: Modern SSH-based authentication instead of legacy WinRM
+- **Comprehensive Monitoring**: Automated health checks with CSV/HTML reporting
 
-## Key Features of This Implementation
-
-This project has been specifically designed to use **OpenSSH instead of WinRM** for secure remote management. This modern approach provides several advantages:
-
-### Why OpenSSH Over WinRM?
-
-- **Enhanced Security**: SSH key-based authentication is more secure than password-based WinRM
-- **Industry Standard**: OpenSSH is the universal standard for secure remote access
-- **Better Tooling**: Extensive ecosystem of SSH tools and libraries
-- **Simplified Firewall**: Only requires port 22 (SSH) vs. port 5986 (WinRM HTTPS)
-- **Cross-Platform**: Same tools work on Linux, macOS, and Windows
-- **Better Debugging**: Standard SSH debugging tools and techniques
-
-### Authentication Method
-
-The project uses **SSH key-based authentication** for all remote operations:
-
-- No passwords transmitted over the network
-- Cryptographically secure authentication
-- Easy to manage and rotate keys
-- Supports automation and CI/CD pipelines
-
-## Configuration Options
-
-### Domain Controller Settings
-
-- `dc_count`: Number of domain controllers to deploy (default: 2)
-- `dc_cpu_cores`: CPU cores per DC (default: 4)
-- `dc_memory_mb`: Memory in MB per DC (default: 8192)
-- `os_disk_size`: OS disk size (default: "80G")
-- `data_disk_size`: Data disk size for AD database (default: "40G")
-
-### Active Directory Settings
-
-- `domain_name`: AD domain name (e.g., "testdomain.local")
-- `netbios_name`: NetBIOS domain name (e.g., "TESTDOMAIN")
-- `domain_functional_level`: Domain functional level (default: "WinThreshold")
-- `forest_functional_level`: Forest functional level (default: "WinThreshold")
-
-### Network Configuration
-
-- `dc_ip_prefix`: IP prefix for DCs (e.g., "192.168.1")
-- `dc_ip_start`: Starting IP last octet (default: 10)
-- `gateway_ip`: Network gateway IP
-- `dns_forwarders`: External DNS forwarders
-
-### Security Settings
-
-- `password_policy`: Fine-grained password policy settings
-- `enable_recycle_bin`: Enable AD Recycle Bin (default: true)
-- `organizational_units`: Custom OU structure
-
-## Post-Deployment Configuration
-
-The deployment includes comprehensive PowerShell scripts that handle:
-
-### Initial Setup (`initial-setup.ps1`)
-
-- System configuration and hardening
-- Network adapter configuration
-- Windows Firewall rules for AD
-- Service configuration
-- Performance optimization
-
-### AD DS Installation (`configure-adds.ps1`)
-
-- Primary DC forest installation
-- Additional DC promotion
-- DNS configuration
-- Replication setup
-- Security policies
-
-### Post-Configuration (`post-config.ps1`)
-
-- Sites and Services configuration
-- Group Policy Central Store
-- Password policies
-- AD Recycle Bin
-- Backup configuration
-- Monitoring setup
-
-### DNS Configuration (`configure-dns.ps1`)
-
-- DNS forwarders
-- Zone configuration
-- Scavenging settings
-- Conditional forwarders
-- Health monitoring
-
-### Health Monitoring (`health-check.ps1`)
-
-- Service status checks
-- AD replication monitoring
-- DNS functionality tests
-- System resource monitoring
-- Event log analysis
-- Automated reporting
-
-## Monitoring and Maintenance
-
-### Automated Health Checks
-
-- Daily health check reports (HTML and CSV)
-- Event log monitoring
-- Service status verification
-- Resource utilization tracking
-
-### Backup Strategy
-
-- Daily system state backups
-- AD database backups
-- Log file retention
-- Automated cleanup
-
-### Scheduled Tasks
-
-- AD health monitoring (every 15 minutes)
-- DNS health monitoring (every 30 minutes)
-- Daily system state backup
-- Weekly cleanup tasks
-
-## Security Features
-
-### Network Security
-
-- Windows Firewall configured for AD services
-- Secure LDAP configuration
-- Kerberos optimization
-- Network segmentation support
-
-### AD Security
-
-- Fine-grained password policies
-- Account lockout policies
-- Audit policy configuration
-- Privileged account protection
-
-### Operational Security
-
-- SSH key-based authentication for secure remote access
-- Encrypted SSH communications (industry standard)
-- Secure backup storage
-- Event log monitoring
-- Automated alerting
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Template Issues**:
-   - Ensure Windows Server 2025 template is properly sysprepped
-   - Verify Proxmox guest agent is installed and running
-   - Check OpenSSH Server configuration and key authentication
-
-2. **Network Issues**:
-   - Verify IP address ranges don't conflict
-   - Check DNS resolution
-   - Ensure firewall rules allow AD traffic and SSH (port 22)
-
-3. **AD Installation Issues**:
-   - Check domain name format
-   - Verify DNS settings
-   - Review PowerShell execution policy
-
-### SSH Connection Testing
+## 🏃 Quick Start
 
 ```bash
-# Test SSH connection to a deployed DC
-ssh -i ~/.ssh/proxmox-testAD Administrator@192.168.1.10
+# 1. Clone and setup
+git clone https://github.com/qovert/proxmox-dc.git
+cd proxmox-dc
+./setup-ansible.sh
 
-# Test SSH with verbose output for troubleshooting
-ssh -i ~/.ssh/proxmox-testAD -v Administrator@192.168.1.10
+# 2. Configure (edit these files)
+nano ansible/group_vars/all.yml     # Main settings
+nano ansible/group_vars/vault.yml   # Secrets (then encrypt)
 
-# Copy files via SCP
-scp -i ~/.ssh/proxmox-testAD local-script.ps1 Administrator@192.168.1.10:C:/Scripts/
+# 3. Deploy
+./deploy.sh                         # Full deployment
 ```
 
-### Logs and Diagnostics
+📖 **For detailed usage instructions, see [docs/usage-guide.md](docs/usage-guide.md)**
 
-- Ansible logs: Use `-v`, `-vv`, or `-vvv` flags for increasing verbosity
-- PowerShell script logs: Check Windows Event Logs
-- AD health reports: `C:\Scripts\Reports\`
+## 📋 Prerequisites
 
-### Useful Commands
+### Quick Checklist
 
-```powershell
-# Check AD services
-Get-Service -Name NTDS, DNS, Netlogon, KDC
+- [ ] **Proxmox VE** cluster with sufficient resources
+- [ ] **Windows Server 2025 template** properly prepared ([guide](docs/template-preparation.md))
+- [ ] **Ansible >= 2.9** with required collections
+- [ ] **SSH key pair** for authentication
+- [ ] **Network planning** (static IPs, DNS forwarders, firewall rules)
 
-# Test AD replication
-Get-ADReplicationPartnerMetadata -Target $env:COMPUTERNAME
+### Template Requirements
 
-# Check DNS
-Resolve-DnsName -Name yourdomain.local -Type A
+Your Windows Server 2025 template must have:
 
-# Run health check manually
-PowerShell.exe -File C:\Scripts\health-check.ps1
+- [ ] Server Core installation (recommended)
+- [ ] OpenSSH Server with key-based authentication
+- [ ] PowerShell 7 installed
+- [ ] CloudBase-Init configured
+- [ ] Proxmox Guest Agent running
+- [ ] System properly sysprepped
+
+## 🎚️ Deployment Options
+
+The `deploy.sh` script supports multiple deployment modes:
+
+```bash
+./deploy.sh              # Full deployment (provision + configure)
+./deploy.sh provision    # Create VMs only
+./deploy.sh configure    # Configure existing VMs only  
+./deploy.sh validate     # Test and validate deployment
+./deploy.sh dry-run      # Preview changes without applying
+./deploy.sh cleanup      # Remove all VMs (with confirmation)
 ```
 
-## Customization
+## 🔍 What Makes This Different?
 
-### Adding Custom OUs
+### vs. Manual Deployment
 
-Modify the `organizational_units` variable:
+- **Consistency**: Eliminates human error and configuration drift
+- **Speed**: Deploy multiple DCs in minutes instead of hours
+- **Documentation**: Infrastructure and configuration are self-documenting
 
-```hcl
-organizational_units = [
-  "Servers",
-  "Workstations",
-  "Users",
-  "Groups",
-  "Service Accounts",
-  "Custom OU 1",
-  "Custom OU 2"
-]
-```
+### vs. Other Automation Tools
 
-### Custom PowerShell Scripts
+- **Simplicity**: Single tool (Ansible) for everything
+- **Security**: Modern SSH authentication vs. legacy protocols
+- **Maintainability**: Modular roles and external scripts
+- **Reliability**: Built-in error handling and retry mechanisms
 
-Add your scripts to the `scripts/` directory and reference them in the Ansible roles.
+### vs. GUI-Based Solutions
 
-### Environment-Specific Settings
+- **Reproducibility**: Version-controlled infrastructure as code
+- **Scalability**: Deploy 1 or 10 DCs with same effort
+- **Integration**: Easy to integrate with CI/CD pipelines
+- **Auditability**: All changes tracked in version control
 
-Use different `.tfvars` files for different environments:
+## 🤝 Contributing
 
-- `development.tfvars`
-- `staging.tfvars`
-- `production.tfvars`
+This project follows infrastructure-as-code best practices:
 
-## Contributing
+1. **Fork** the repository
+2. **Create** a feature branch
+3. **Test** changes thoroughly in a lab environment
+4. **Document** any new features or changes
+5. **Submit** a pull request with detailed description
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## 📄 License
 
-## License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- **Proxmox VE** community for virtualization platform
+- **Ansible** community for Windows automation modules
+- **Windows Server** team for PowerShell and OpenSSH integration
+- **Active Directory** best practices and security guidelines
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 

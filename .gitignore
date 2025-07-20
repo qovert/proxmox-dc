@@ -3,12 +3,15 @@
 # Ansible sensitive files
 ansible/group_vars/vault.yml
 ansible/vault_pass.txt
+ansible/vault_pass
 
 # Ansible temporary files
 ansible/*.retry
 ansible/.vault_pass
 ansible/collections/
 ansible/roles/*/tests/
+ansible/.ansible_cache/
+ansible/.ansible/
 
 # Crash log files
 crash.log

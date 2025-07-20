@@ -21,101 +21,17 @@ ansible-galaxy collection install microsoft.ad --force
 echo "Creating Ansible directory structure..."
 mkdir -p ansible/group_vars
 mkdir -p ansible/host_vars
-mkdir -p ansible/roles/dns_server/tasks
-mkdir -p ansible/roles/monitoring/tasks
 
-# Create missing role files
-echo "Creating placeholder role files..."
-
-# DNS Server role
-cat > ansible/roles/dns_server/tasks/main.yml << 'EOF'
----
-# DNS Server Configuration Role
-- name: Configure DNS forwarders
-  win_powershell:
-    script: |
-      $forwarders = @({{ dns_forwarders | map('quote') | join(', ') }})
-      Set-DnsServerForwarder -IPAddress $forwarders
-  when: is_primary_dc | default(false)
-
-- name: Configure DNS scavenging
-  win_powershell:
-    script: |
-      Set-DnsServerScavenging -ScavengingState $true -ScavengingInterval 7.00:00:00
-      Set-DnsServerZoneAging -Name "{{ domain_name }}" -Aging $true -ScavengeServers "{{ ansible_host }}"
-  when: is_primary_dc | default(false)
-
-- name: Create reverse lookup zones
-  win_powershell:
-    script: |
-      $network = "{{ ansible_host.split('.')[0:3] | join('.') }}"
-      $reverseZone = "$($network.Split('.')[2]).$($network.Split('.')[1]).$($network.Split('.')[0]).in-addr.arpa"
-      Add-DnsServerPrimaryZone -Name $reverseZone -ReplicationScope Domain -DynamicUpdate Secure
-  when: is_primary_dc | default(false)
-  ignore_errors: yes
-EOF
-
-# Monitoring role
-cat > ansible/roles/monitoring/tasks/main.yml << 'EOF'
----
-# Monitoring and Health Check Role
-- name: Create monitoring scripts directory
-  win_file:
-    path: "C:\\Scripts\\Monitoring"
-    state: directory
-
-- name: Deploy health check script
-  win_copy:
-    content: |
-      # AD Health Check Script
-      $results = @()
-      
-      # Check AD services
-      $services = @('NTDS', 'DNS', 'Netlogon', 'KDC')
-      foreach ($service in $services) {
-          $svc = Get-Service -Name $service -ErrorAction SilentlyContinue
-          $results += [PSCustomObject]@{
-              Check = "Service_$service"
-              Status = if ($svc) { $svc.Status } else { "NotFound" }
-              Result = if ($svc -and $svc.Status -eq "Running") { "PASS" } else { "FAIL" }
-          }
-      }
-      
-      # Check AD replication
-      try {
-          $replInfo = Get-ADReplicationPartnerMetadata -Target $env:COMPUTERNAME
-          $results += [PSCustomObject]@{
-              Check = "AD_Replication"
-              Status = "Partners: $($replInfo.Count)"
-              Result = if ($replInfo.Count -gt 0) { "PASS" } else { "WARN" }
-          }
-      } catch {
-          $results += [PSCustomObject]@{
-              Check = "AD_Replication"
-              Status = "Error: $($_.Exception.Message)"
-              Result = "FAIL"
-          }
-      }
-      
-      # Output results
-      $results | Format-Table -AutoSize
-      $results | Export-Csv -Path "C:\Scripts\Monitoring\health-$(Get-Date -Format 'yyyyMMdd-HHmm').csv" -NoTypeInformation
-    dest: "C:\\Scripts\\Monitoring\\health-check.ps1"
-
-- name: Create scheduled task for health monitoring
-  win_scheduled_task:
-    name: "AD Health Check"
-    description: "Daily Active Directory health check"
-    actions:
-      - path: "powershell.exe"
-        arguments: "-ExecutionPolicy Bypass -File C:\\Scripts\\Monitoring\\health-check.ps1"
-    triggers:
-      - type: daily
-        start_time: "06:00"
-    username: SYSTEM
-    state: present
-    enabled: yes
-EOF
+# Verify roles exist
+echo "Verifying Ansible roles..."
+required_roles=("windows_base" "active_directory" "dns_server" "monitoring")
+for role in "${required_roles[@]}"; do
+    if [ -d "ansible/roles/$role" ]; then
+        echo "✅ Role '$role' found"
+    else
+        echo "⚠️  Role '$role' missing - this may cause deployment issues"
+    fi
+done
 
 # Create vault password file if it doesn't exist
 if [ ! -f ansible/vault_pass ]; then
@@ -125,14 +41,49 @@ if [ ! -f ansible/vault_pass ]; then
     echo "⚠️  IMPORTANT: Change the password in ansible/vault_pass before deployment!"
 fi
 
+# Create vault.yml if it doesn't exist
+if [ ! -f ansible/group_vars/vault.yml ]; then
+    echo "Creating vault template file..."
+    cat > ansible/group_vars/vault.yml << 'EOF'
+---
+# Ansible Vault file for sensitive variables
+# This file will be encrypted after you update the passwords
+
+# Proxmox Credentials
+vault_proxmox_password: "CHANGE-ME-proxmox-api-password"
+
+# Active Directory Credentials  
+vault_admin_password: "CHANGE-ME-windows-admin-password"
+vault_dsrm_password: "CHANGE-ME-dsrm-password"
+
+# SSH Key (replace with your actual public key)
+vault_ssh_public_key: "CHANGE-ME-ssh-ed25519-AAAAB3NzaC1yc2E..."
+EOF
+    echo "📝 Created ansible/group_vars/vault.yml template"
+    echo "⚠️  IMPORTANT: Update passwords in vault.yml, then encrypt it!"
+elif ! grep -q '^\$ANSIBLE_VAULT' ansible/group_vars/vault.yml; then
+    echo "⚠️  Found unencrypted vault.yml file"
+    echo "📝 Please update passwords and encrypt with: ansible-vault encrypt ansible/group_vars/vault.yml --vault-password-file ansible/vault_pass"
+else
+    echo "✅ Encrypted vault.yml found"
+fi
+
 echo "✅ Ansible setup complete!"
 echo ""
 echo "Next steps:"
 echo "1. Update ansible/vault_pass with a secure password"
-echo "2. Configure ansible/group_vars/all.yml with your environment settings"
-echo "3. Run './deploy.sh' to deploy infrastructure and configuration"
+echo "2. Create inventory file: cp ansible/inventory-minimal.yml.example ansible/inventory.yml"
+echo "3. Configure ansible/group_vars/all.yml with your environment settings"
+echo "4. Update passwords in ansible/group_vars/vault.yml"
+echo "5. Encrypt the vault: ansible-vault encrypt ansible/group_vars/vault.yml --vault-password-file ansible/vault_pass"
+echo "6. Run './deploy.sh' to deploy infrastructure and configuration"
 echo ""
 echo "Alternative deployment commands:"
 echo "  ./deploy.sh provision  # Create VMs only"
 echo "  ./deploy.sh configure  # Configure AD on existing VMs"
 echo "  ./deploy.sh validate   # Test deployment"
+echo ""
+echo "Vault management commands:"
+echo "  ansible-vault edit ansible/group_vars/vault.yml --vault-password-file ansible/vault_pass    # Edit encrypted vault"
+echo "  ansible-vault view ansible/group_vars/vault.yml --vault-password-file ansible/vault_pass    # View encrypted vault"
+echo "  ansible-vault encrypt ansible/group_vars/vault.yml --vault-password-file ansible/vault_pass # Encrypt vault file"

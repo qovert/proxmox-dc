@@ -1,19 +1,35 @@
 # Documentation
 
-This directory contains additional technical documentation for the project.
+This directory contains detailed technical documentation for the project.
 
 ## Available Documentation
 
+- **[usage-guide.md](usage-guide.md)** - Complete deployment and usage guide
 - **[template-preparation.md](template-preparation.md)** - Detailed guide for preparing Windows Server 2025 templates
 
-## Main Documentation
+## Quick Navigation
 
-The primary documentation is in the [main README.md](../README.md) which includes:
+### For New Users
 
-- Project overview and features
-- Prerequisites and requirements  
-- Complete deployment guide
-- Troubleshooting and support
-- Template preparation overview
+Start with the [Usage Guide](usage-guide.md) which covers:
 
-For most users, the main README provides all necessary information to deploy and manage the Windows AD environment.
+- Prerequisites and environment setup
+- Step-by-step deployment process
+- Configuration options and customization
+- Troubleshooting common issues
+
+### For Template Setup
+
+See [Template Preparation Guide](template-preparation.md) for:
+
+- Creating Windows Server 2025 templates
+- Required components and configuration
+- Testing and validation procedures
+
+### For Project Overview
+
+The main [README.md](../README.md) covers:
+
+- Project goals and architecture
+- Repository structure and organization
+- Key design decisions and benefits
