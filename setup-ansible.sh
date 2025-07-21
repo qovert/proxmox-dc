@@ -11,11 +11,13 @@ else
     echo "Ansible is already installed: $(ansible --version | head -1)"
 fi
 
-# Install Windows collections
-echo "Installing Ansible Windows collections..."
+# Install required collections
+echo "Installing Ansible collections..."
 ansible-galaxy collection install ansible.windows --force
 ansible-galaxy collection install community.windows --force
 ansible-galaxy collection install microsoft.ad --force
+# Note: proxmox_kvm module moved from community.general to community.proxmox in 2024
+ansible-galaxy collection install community.proxmox --force
 
 # Create required directories
 echo "Creating Ansible directory structure..."

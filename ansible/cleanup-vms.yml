@@ -22,7 +22,7 @@
 
   tasks:
     - name: Stop Domain Controller VMs
-      community.general.proxmox_kvm:
+      community.proxmox.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password }}"
@@ -38,7 +38,7 @@
         seconds: 10
 
     - name: Delete Domain Controller VMs
-      community.general.proxmox_kvm:
+      community.proxmox.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password }}"

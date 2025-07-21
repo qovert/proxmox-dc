@@ -27,7 +27,7 @@
   tasks:
     # Phase 1: Infrastructure Provisioning
     - name: Create Windows Domain Controller VMs
-      community.general.proxmox_kvm:
+      community.proxmox.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password }}"
@@ -36,12 +36,13 @@
         node: "{{ proxmox_node }}"
         clone: "{{ windows_template_name }}"
         full: true
-        cores: "{{ dc_cpu_cores }}"
-        sockets: "{{ dc_cpu_sockets }}"
-        memory: "{{ dc_memory_mb }}"
-        bios: "{{ dc_bios_type }}"
-        machine: "{{ dc_machine_type }}"
-        cpu: "{{ dc_cpu_type }}"
+        # VM Resources - only specify if overriding template values
+        cores: "{{ dc_cpu_cores | default(omit) }}"
+        sockets: "{{ dc_cpu_sockets | default(omit) }}"
+        memory: "{{ dc_memory_mb | default(omit) }}"
+        bios: "{{ dc_bios_type | default(omit) }}"
+        machine: "{{ dc_machine_type | default(omit) }}"
+        cpu: "{{ dc_cpu_type | default(omit) }}"
         boot: order=virtio0
         net:
           net0: "virtio,bridge={{ network_bridge }},ip={{ item.ip }}/{{ network_cidr_bits }},gw={{ gateway_ip }}"
@@ -57,7 +58,7 @@
       tags: [provision]
 
     - name: Start Domain Controller VMs
-      community.general.proxmox_kvm:
+      community.proxmox.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password }}"

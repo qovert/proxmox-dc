@@ -1,35 +1,35 @@
-# Documentation
+# Documentation Directory
 
-This directory contains detailed technical documentation for the project.
+This directory contains comprehensive documentation for deploying Windows Server 2025 Active Directory Domain Controllers on Proxmox VE using Ansible.
 
-## Available Documentation
+## 📚 Documentation Index
 
-- **[usage-guide.md](usage-guide.md)** - Complete deployment and usage guide
-- **[template-preparation.md](template-preparation.md)** - Detailed guide for preparing Windows Server 2025 templates
+### Setup and Configuration
 
-## Quick Navigation
+- **[Template Preparation Guide](template-preparation.md)** - How to create a Windows Server 2025 template
+- **[Proxmox Authentication Setup](proxmox-authentication-setup.md)** - Configure Proxmox API access for Ansible
+- **[Inventory Configuration Guide](inventory-guide.md)** - Complete inventory configuration reference
 
-### For New Users
+### Deployment and Usage
 
-Start with the [Usage Guide](usage-guide.md) which covers:
+- **[Usage Guide](usage-guide.md)** - Step-by-step deployment instructions and troubleshooting
 
-- Prerequisites and environment setup
-- Step-by-step deployment process
-- Configuration options and customization
-- Troubleshooting common issues
+### Project Status
 
-### For Template Setup
+- **[Implementation Complete](implementation-complete.md)** - Current project status and accomplished features
 
-See [Template Preparation Guide](template-preparation.md) for:
+## 🚀 Quick Start Path
 
-- Creating Windows Server 2025 templates
-- Required components and configuration
-- Testing and validation procedures
+For new users, follow this documentation order:
 
-### For Project Overview
+1. **[Template Preparation](template-preparation.md)** - Set up your Windows template first
+2. **[Proxmox Authentication](proxmox-authentication-setup.md)** - Configure API access
+3. **[Inventory Configuration](inventory-guide.md)** - Customize your deployment settings
+4. **[Usage Guide](usage-guide.md)** - Deploy and manage your domain controllers
 
-The main [README.md](../README.md) covers:
+## 💡 Documentation Tips
 
-- Project goals and architecture
-- Repository structure and organization
-- Key design decisions and benefits
+- Each guide includes troubleshooting sections
+- Look for ✅ success indicators to verify progress
+- All guides include command examples you can copy/paste
+- Security best practices are highlighted throughout

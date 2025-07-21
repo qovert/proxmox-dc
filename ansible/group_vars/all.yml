@@ -9,10 +9,10 @@
 # - Boot order: virtio0 (not net0 as in template - will be changed after clone)
 
 # Proxmox Configuration
-proxmox_api_url: "https://proxmox.example.com:8006/api2/json"
-proxmox_user: "ansible@pve"
-# proxmox_password should be stored in vault (vault_proxmox_password)
-proxmox_node: "proxmox-01"
+proxmox_api_url: "https://172.16.30.10:8006/api2/json"
+proxmox_user: "ansible@pve!automation"  # Note the !token-id format
+proxmox_password: "{{ vault_proxmox_token }}"
+proxmox_node: "Adamant"
 proxmox_tls_insecure: true
 
 # Windows Template Configuration
@@ -24,16 +24,26 @@ dc_count: 2
 dc_name_prefix: "dc"
 dc_vmid_start: 200
 
-# VM Resources
-dc_cpu_cores: 4
-dc_cpu_sockets: 1
-dc_memory_mb: 8192
-dc_cpu_type: "x86-64-v2-AES"  # Match template CPU type
-dc_machine_type: "pc-q35-9.2+pve1"  # Match template machine type
-dc_bios_type: "ovmf"  # UEFI boot for Windows Server 2025
+# VM Resources - Template Inheritance vs Override
+# When cloning from template, you can either:
+# 1. INHERIT: Let cloned VMs use template's resource configuration (recommended)
+# 2. OVERRIDE: Specify custom resources below (useful for standardization)
+
+# Current approach: OVERRIDE template resources with standardized values
+# This ensures consistent sizing regardless of template configuration
+#dc_cpu_cores: 4
+#dc_cpu_sockets: 1
+#dc_memory_mb: 8192
+#dc_cpu_type: "x86-64-v2-AES"  # Match template CPU type
+#dc_machine_type: "pc-q35-9.2+pve1"  # Match template machine type
+#dc_bios_type: "ovmf"  # UEFI boot for Windows Server 2025
+
+# Alternative approach: INHERIT template resources
+# To use template's CPU/memory settings, comment out the above variables
+# and the playbook will clone with template's original configuration
 
 # Storage Configuration
-storage_pool: "local-lvm"
+storage_pool: "pve-nvme"
 # Template uses virtio0 (32GB) - disk sizes are inherited from template when cloning
 # Only uncomment and specify if you need to:
 # - Resize existing disks after clone (requires additional tasks)
@@ -43,10 +53,10 @@ storage_pool: "local-lvm"
 
 # Network Configuration
 network_bridge: "vmbr0"
-dc_ip_prefix: "192.168.1"
-dc_ip_start: 10
+dc_ip_prefix: "172.16.30"
+dc_ip_start: 40
 network_cidr_bits: 24
-gateway_ip: "192.168.1.1"
+gateway_ip: "172.16.30.1"
 dns_servers: "1.1.1.1 8.8.8.8"
 
 # Active Directory Configuration
@@ -59,7 +69,7 @@ admin_username: "Administrator"
 # dsrm_password: stored as vault_dsrm_password
 
 # SSH Configuration  
-# ssh_public_key: "ssh-ed25519 AAAAB3NzaC1yc2E... your-key-here"
+ssh_public_key: "{{ vault_ssh_public_key }}"
 
 # DNS Configuration
 dns_forwarders:
