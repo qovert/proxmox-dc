@@ -6,7 +6,14 @@
 .DESCRIPTION
     This script prepares a Windows Server template for cloning by running sysprep
     with appropriate settings to ensure proper boot and disk detection in cloned VMs.
-    Uses the unattend.xml template from the configs directory for consistent sysprep behavior.
+    
+    The script automatically searches for unattend.xml in multiple locations:
+    - C:\Scripts\unattend.xml (downloaded by prepare-windows-template.ps1)
+    - Same directory as this script
+    - Repository configs directory
+    - User-specified path via parameter
+    
+    If no unattend.xml is found, it creates a basic one automatically.
     
 .PARAMETER Generalize
     Whether to generalize the installation (default: true)
@@ -57,12 +64,28 @@ try {
     Write-Host "Operating System: $($osVersion.Caption)" -ForegroundColor Cyan
     Write-Host "Version: $($osVersion.Version)" -ForegroundColor Cyan
 
-    # Locate the unattend.xml template file
-    $repoRoot = Split-Path -Parent $PSScriptRoot
-    $sourceUnattendPath = Join-Path $repoRoot "configs\unattend.xml"
+    # Locate the unattend.xml template file in multiple possible locations
+    $possibleUnattendPaths = @(
+        "C:\Scripts\unattend.xml",                          # Downloaded by prepare-windows-template.ps1
+        (Join-Path $PSScriptRoot "unattend.xml"),          # Same directory as this script
+        (Join-Path (Split-Path -Parent $PSScriptRoot) "configs\unattend.xml"),  # Repository configs directory
+        $UnattendPath                                       # User-specified path
+    )
     
-    if (-not (Test-Path $sourceUnattendPath)) {
-        Write-Warning "Unattend.xml template not found at: $sourceUnattendPath"
+    $sourceUnattendPath = $null
+    foreach ($path in $possibleUnattendPaths) {
+        if (Test-Path $path) {
+            $sourceUnattendPath = $path
+            Write-Host "Found unattend.xml template at: $sourceUnattendPath" -ForegroundColor Cyan
+            break
+        }
+    }
+    
+    if (-not $sourceUnattendPath) {
+        Write-Warning "Unattend.xml template not found in any expected location:"
+        foreach ($path in $possibleUnattendPaths) {
+            Write-Warning "  - $path"
+        }
         Write-Host "Creating basic unattend.xml..." -ForegroundColor Yellow
         
         # Fallback: create a minimal unattend.xml if template is missing
@@ -95,10 +118,10 @@ try {
     }
 
     # Write unattend.xml
-    if (Test-Path $sourceUnattendPath) {
+    if ($sourceUnattendPath) {
         Write-Host "Copying unattend.xml template to: $UnattendPath" -ForegroundColor Cyan
         Copy-Item -Path $sourceUnattendPath -Destination $UnattendPath -Force
-        Write-Host "Copied unattend.xml from template" -ForegroundColor Green
+        Write-Host "Copied unattend.xml from template: $sourceUnattendPath" -ForegroundColor Green
     } else {
         Write-Host "Using generated basic unattend.xml" -ForegroundColor Green
     }
