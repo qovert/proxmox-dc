@@ -34,6 +34,31 @@ This directory contains configuration files used by the Windows Server 2025 temp
 - Comprehensive logging
 - Network configuration from DHCP
 
+### `unattend.xml`
+
+**Purpose**: Windows Sysprep unattended answer file for template preparation  
+**Usage**: Used by `run-sysprep.ps1` script during template finalization  
+**Features**:
+- OOBE (Out-of-Box Experience) automation
+- Administrator password configuration (encoded)
+- Regional settings (en-US locale)
+- Storage device policy configurations
+- Driver path specifications
+- Skips interactive setup screens
+
+**Security Notes**:
+- Contains encoded Administrator password: `Reset@123!AdministratorPassword`
+- Password can be customized by re-encoding with desired value
+- Used during sysprep generalization process
+
+**Customization**:
+To change the Administrator password:
+1. Encode your password using PowerShell:
+   ```powershell
+   [System.Text.Encoding]::Unicode.GetBytes("YourNewPassword") | ForEach-Object { [System.Convert]::ToBase64String($_) }
+   ```
+2. Replace the `<Value>` content in the `<AdministratorPassword>` section
+
 ## GitHub Integration
 
 These configuration files are automatically downloaded from the GitHub repository during template preparation:

@@ -13,6 +13,10 @@
     - System optimization and hardening
     - Sysprep for template generalization
 
+    The script automatically downloads required files (configuration files and additional
+    scripts) from the GitHub repository when internet connectivity is available, making
+    it a self-contained solution for template preparation.
+
     The script is designed to run on a fresh Windows Server 2025 Core installation
     and prepare it for conversion to a Proxmox template.
 
@@ -468,6 +472,129 @@ function Get-FileFromUrl {
     }
 }
 
+function Get-RequiredFiles {
+    <#
+    .SYNOPSIS
+        Downloads required scripts and configuration files from the GitHub repository.
+    .DESCRIPTION
+        Downloads essential files needed for Windows template preparation from the
+        proxmox-dc GitHub repository. Creates necessary directories and sets proper permissions.
+    .PARAMETER BaseUrl
+        Base URL of the GitHub repository. Defaults to the main proxmox-dc repository.
+    .PARAMETER TargetPath
+        Local path where files should be downloaded. Defaults to C:\Scripts.
+    .EXAMPLE
+        PS C:\> Get-RequiredFiles
+        Downloads all required files to C:\Scripts using the default repository.
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$BaseUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main",
+        
+        [Parameter(Mandatory = $false)]
+        [string]$TargetPath = "C:\Scripts"
+    )
+    
+    # Ensure target directory exists
+    if (-not (Test-Path $TargetPath)) {
+        New-Item -ItemType Directory -Path $TargetPath -Force | Out-Null
+        Write-Log "Created directory: $TargetPath" "SUCCESS"
+    }
+    
+    # Define required files to download
+    $requiredFiles = @(
+        @{
+            Source = "scripts/run-sysprep.ps1"
+            Target = "$TargetPath\run-sysprep.ps1"
+            Description = "Sysprep script for template finalization"
+        },
+        @{
+            Source = "scripts/configure-adds.ps1"
+            Target = "$TargetPath\configure-adds.ps1" 
+            Description = "Active Directory configuration script"
+        },
+        @{
+            Source = "scripts/post-config.ps1"
+            Target = "$TargetPath\post-config.ps1"
+            Description = "Post-configuration script"
+        },
+        @{
+            Source = "configs/unattend.xml"
+            Target = "$TargetPath\unattend.xml"
+            Description = "Sysprep unattended answer file"
+        },
+        @{
+            Source = "configs/sshd_config"
+            Target = "$TargetPath\sshd_config"
+            Description = "SSH server configuration file"
+        },
+        @{
+            Source = "configs/sshd_config_minimal"
+            Target = "$TargetPath\sshd_config_minimal"
+            Description = "Minimal SSH server configuration"
+        },
+        @{
+            Source = "configs/cloudbase-init.conf"
+            Target = "$TargetPath\cloudbase-init.conf"
+            Description = "CloudBase-Init configuration file"
+        }
+    )
+    
+    $downloadedFiles = 0
+    $totalFiles = $requiredFiles.Count
+    
+    Write-Log "Downloading $totalFiles required files from GitHub repository..." "INFO"
+    
+    foreach ($file in $requiredFiles) {
+        $sourceUrl = "$BaseUrl/$($file.Source)"
+        
+        try {
+            Write-Log "Downloading $($file.Description)..." "INFO"
+            
+            if (Get-FileFromUrl -Url $sourceUrl -OutputPath $file.Target) {
+                # Set appropriate permissions for PowerShell scripts
+                if ($file.Target.EndsWith('.ps1')) {
+                    try {
+                        # Unblock the downloaded PowerShell script
+                        Unblock-File -Path $file.Target -ErrorAction SilentlyContinue
+                        Write-Log "Unblocked PowerShell script: $($file.Target)" "SUCCESS"
+                    } catch {
+                        Write-Log "Warning: Could not unblock $($file.Target): $($_.Exception.Message)" "WARNING"
+                    }
+                }
+                
+                $downloadedFiles++
+                Write-Log "Successfully downloaded: $($file.Description)" "SUCCESS"
+            } else {
+                Write-Log "Failed to download: $($file.Description)" "WARNING"
+            }
+        } catch {
+            Write-Log "Error downloading $($file.Description): $($_.Exception.Message)" "WARNING"
+        }
+    }
+    
+    # Set permissions on the Scripts directory
+    try {
+        icacls $TargetPath /grant "Administrators:(OI)(CI)F" /T | Out-Null
+        Write-Log "Set permissions on Scripts directory" "SUCCESS"
+    } catch {
+        Write-Log "Warning: Could not set permissions on $TargetPath" "WARNING"
+    }
+    
+    Write-Log "Downloaded $downloadedFiles of $totalFiles required files" "INFO"
+    
+    if ($downloadedFiles -eq $totalFiles) {
+        Write-Log "All required files downloaded successfully" "SUCCESS"
+        return $true
+    } elseif ($downloadedFiles -gt 0) {
+        Write-Log "Some files downloaded successfully, template preparation can continue" "WARNING"
+        return $true
+    } else {
+        Write-Log "No files could be downloaded - template may be missing required components" "ERROR"
+        return $false
+    }
+}
+
 # Script initialization and validation
 Write-Host "`nWindows Server 2025 Template Preparation Script" -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
@@ -518,6 +645,14 @@ Write-Log "Script parameters: SkipWindowsUpdates=$SkipWindowsUpdates, SkipCloudb
 Write-Log "Testing internet connectivity..."
 if (-not (Test-InternetConnection)) {
     Write-Log "No internet connectivity detected. Some steps may fail." "WARNING"
+} else {
+    Write-Log "Internet connectivity confirmed" "SUCCESS"
+    
+    # Download required files from GitHub repository
+    Write-Log "Downloading required files from GitHub repository..."
+    if (-not (Get-RequiredFiles)) {
+        Write-Log "Failed to download some required files - continuing with local files if available" "WARNING"
+    }
 }
 
 try {
@@ -737,42 +872,79 @@ try {
             # Configure SSH for key-based authentication
             Set-SSHPublicKey -PublicKeyPath $SSHPublicKey
             
-            # Download and apply SSH configuration from GitHub if internet is available
-            if (Test-InternetConnection) {
-                Write-Log "Downloading SSH configuration from GitHub..."
+            # Configure SSH using local or downloaded configuration files
+            Write-Log "Configuring SSH server..."
+            $localSshConfig = "C:\Scripts\sshd_config"
+            $localSshConfigMinimal = "C:\Scripts\sshd_config_minimal"
+            $configApplied = $false
+            
+            # Try to use local SSH configuration first
+            if (Test-Path $localSshConfig) {
+                Write-Log "Using local SSH configuration file: $localSshConfig"
+                try {
+                    Copy-Item -Path $localSshConfig -Destination $sshdConfigPath -Force
+                    Write-Log "Local SSH configuration file applied" "SUCCESS"
+                    $configApplied = $true
+                } catch {
+                    Write-Log "Failed to apply local SSH configuration: $($_.Exception.Message)" "WARNING"
+                }
+            }
+            
+            # Fall back to downloading SSH configuration if local file not available
+            if (-not $configApplied -and (Test-InternetConnection)) {
+                Write-Log "Local SSH config not found, downloading from GitHub..."
                 $sshConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/sshd_config"
                 $tempSshConfig = "$env:TEMP\sshd_config"
                 
                 if (Get-FileFromUrl -Url $sshConfigUrl -OutputPath $tempSshConfig) {
-                    Copy-Item -Path $tempSshConfig -Destination $sshdConfigPath -Force
-                    Write-Log "SSH configuration file downloaded and applied" "SUCCESS"
-                    
-                    # Test SSH configuration before starting service
-                    Write-Log "Testing SSH configuration..."
-                    $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
-                    if (Test-Path $sshdExe) {
-                        try {
-                            # Test SSH configuration syntax
-                            $configTest = & $sshdExe -t 2>&1
-                            if ($LASTEXITCODE -eq 0) {
-                                Write-Log "SSH configuration test passed" "SUCCESS"
-                            } else {
-                                Write-Log "SSH configuration test failed: $configTest" "ERROR"
-                                Write-Log "SSH configuration will need to be manually configured" "INFO"
+                    try {
+                        Copy-Item -Path $tempSshConfig -Destination $sshdConfigPath -Force
+                        Write-Log "SSH configuration file downloaded and applied" "SUCCESS"
+                        $configApplied = $true
+                    } catch {
+                        Write-Log "Failed to apply downloaded SSH configuration: $($_.Exception.Message)" "WARNING"
+                    }
+                }
+            }
+            
+            # Test SSH configuration if applied
+            if ($configApplied) {
+                Write-Log "Testing SSH configuration..."
+                $sshdExe = "C:\Windows\System32\OpenSSH\sshd.exe"
+                if (Test-Path $sshdExe) {
+                    try {
+                        # Test SSH configuration syntax
+                        $configTest = & $sshdExe -t 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Log "SSH configuration test passed" "SUCCESS"
+                        } else {
+                            Write-Log "SSH configuration test failed: $configTest" "ERROR"
+                            
+                            # Try minimal configuration as fallback
+                            if (Test-Path $localSshConfigMinimal) {
+                                Write-Log "Trying minimal SSH configuration as fallback..." "INFO"
+                                try {
+                                    Copy-Item -Path $localSshConfigMinimal -Destination $sshdConfigPath -Force
+                                    $configTest = & $sshdExe -t 2>&1
+                                    if ($LASTEXITCODE -eq 0) {
+                                        Write-Log "Minimal SSH configuration applied successfully" "SUCCESS"
+                                    } else {
+                                        Write-Log "Minimal SSH configuration also failed" "ERROR"
+                                    }
+                                } catch {
+                                    Write-Log "Failed to apply minimal SSH configuration: $($_.Exception.Message)" "WARNING"
+                                }
                             }
-                        } catch {
-                            Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
                         }
-                    } else {
-                        Write-Log "SSH executable not found, configuration applied but cannot test" "WARNING"
+                    } catch {
+                        Write-Log "Failed to test SSH configuration: $($_.Exception.Message)" "WARNING"
                     }
                 } else {
-                    Write-Log "Failed to download SSH configuration from GitHub" "WARNING"
-                    Write-Log "SSH configuration will need to be manually configured" "INFO"
+                    Write-Log "SSH executable not found, configuration applied but cannot test" "WARNING"
                 }
             } else {
-                Write-Log "No internet connectivity detected - skipping SSH configuration download" "INFO"
-                Write-Log "SSH configuration will need to be manually configured after template deployment" "INFO"
+                Write-Log "No SSH configuration applied - using OpenSSH defaults" "INFO"
+                Write-Log "SSH configuration will need to be manually configured" "INFO"
             }
             
             # Configure PowerShell as default shell (using registry method)
@@ -835,27 +1007,26 @@ try {
             $cloudbaseExecutable = "$cloudbaseInstallPath\Python\Scripts\cloudbase-init.exe"
             $cloudbaseConfigPath = "$cloudbaseInstallPath\conf\cloudbase-init.conf"
             
-            # Download CloudBase-Init configuration from GitHub if internet is available
-            if (Test-InternetConnection) {
-                Write-Log "Downloading CloudBase-Init configuration from GitHub..."
-                $cloudbaseConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/cloudbase-init.conf"
-                $tempCloudbaseConfig = "$env:TEMP\cloudbase-init.conf"
+            # Configure CloudBase-Init using local or downloaded configuration files
+            $localCloudbaseConfig = "C:\Scripts\cloudbase-init.conf"
+            
+            # Function to apply CloudBase-Init configuration
+            function Set-CloudbaseConfig {
+                param($ConfigPath, $SourcePath, $SourceDescription)
                 
-                # Function to download CloudBase-Init configuration
-                function Get-CloudbaseConfig {
-                    param($ConfigPath, $ConfigUrl)
-                    
-                    if (Get-FileFromUrl -Url $ConfigUrl -OutputPath $tempCloudbaseConfig) {
-                        Copy-Item -Path $tempCloudbaseConfig -Destination $ConfigPath -Force
-                        Write-Log "CloudBase-Init configuration downloaded and applied from GitHub" "SUCCESS"
+                try {
+                    if (Test-Path $SourcePath) {
+                        Copy-Item -Path $SourcePath -Destination $ConfigPath -Force
+                        Write-Log "CloudBase-Init configuration applied from $SourceDescription" "SUCCESS"
                         return $true
                     } else {
-                        Write-Log "Failed to download CloudBase-Init configuration from GitHub" "WARNING"
+                        Write-Log "$SourceDescription not found: $SourcePath" "WARNING"
                         return $false
                     }
+                } catch {
+                    Write-Log "Failed to apply CloudBase-Init configuration from $SourceDescription`: $($_.Exception.Message)" "WARNING"
+                    return $false
                 }
-            } else {
-                Write-Log "No internet connectivity detected - skipping CloudBase-Init configuration download" "INFO"
             }
             
             # Check if CloudBase-Init is already installed
@@ -863,14 +1034,24 @@ try {
                 if (Test-Path $cloudbaseExecutable) {
                     Write-Log "CloudBase-Init is already installed" "SUCCESS"
                     
-                    # Ensure configuration is properly set up if internet is available
+                    # Ensure configuration is properly set up
                     if (-not (Test-Path $cloudbaseConfigPath)) {
-                        if (Test-InternetConnection) {
-                            Write-Log "CloudBase-Init configuration missing, downloading from GitHub..." "WARNING"
-                            Get-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigUrl $cloudbaseConfigUrl
-                        } else {
-                            Write-Log "CloudBase-Init configuration missing and no internet connectivity" "WARNING"
-                            Write-Log "CloudBase-Init configuration will need to be manually configured" "INFO"
+                        Write-Log "CloudBase-Init configuration missing, applying configuration..." "WARNING"
+                        
+                        # Try local configuration first
+                        if (-not (Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -SourcePath $localCloudbaseConfig -SourceDescription "local file")) {
+                            # Fall back to downloading if local file not available and internet is available
+                            if (Test-InternetConnection) {
+                                $cloudbaseConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/cloudbase-init.conf"
+                                $tempCloudbaseConfig = "$env:TEMP\cloudbase-init.conf"
+                                
+                                if (Get-FileFromUrl -Url $cloudbaseConfigUrl -OutputPath $tempCloudbaseConfig) {
+                                    Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -SourcePath $tempCloudbaseConfig -SourceDescription "GitHub download"
+                                }
+                            } else {
+                                Write-Log "No local config found and no internet connectivity" "WARNING"
+                                Write-Log "CloudBase-Init configuration will need to be manually configured" "INFO"
+                            }
                         }
                     } else {
                         Write-Log "CloudBase-Init configuration already exists" "SUCCESS"
@@ -888,8 +1069,16 @@ try {
                     
                     if (Get-FileFromUrl -Url $cloudbaseUrl -OutputPath $cloudbaseInstaller) {
                         if (Install-MsiPackage -InstallerPath $cloudbaseInstaller -PackageName "CloudBase-Init" -Arguments @("/quiet", "/qn")) {
-                            # Download and configure CloudBase-Init from GitHub
-                            Get-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -ConfigUrl $cloudbaseConfigUrl
+                            # Apply configuration from local file first, then fall back to download
+                            if (-not (Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -SourcePath $localCloudbaseConfig -SourceDescription "local file")) {
+                                # Download configuration from GitHub as fallback
+                                $cloudbaseConfigUrl = "https://raw.githubusercontent.com/qovert/proxmox-dc/main/configs/cloudbase-init.conf"
+                                $tempCloudbaseConfig = "$env:TEMP\cloudbase-init.conf"
+                                
+                                if (Get-FileFromUrl -Url $cloudbaseConfigUrl -OutputPath $tempCloudbaseConfig) {
+                                    Set-CloudbaseConfig -ConfigPath $cloudbaseConfigPath -SourcePath $tempCloudbaseConfig -SourceDescription "GitHub download"
+                                }
+                            }
                             Write-Log "CloudBase-Init installed and configured successfully" "SUCCESS"
                         }
                     }
@@ -1055,13 +1244,40 @@ try {
         Write-Log "The system will shut down after Sysprep completes."
         Write-Log "After shutdown, convert the VM to a template in Proxmox."
         
-        # Use the comprehensive sysprep script instead of basic command
-        $sysprepScript = Join-Path $PSScriptRoot "run-sysprep.ps1"
-        if (Test-Path $sysprepScript) {
+        # Look for the comprehensive sysprep script in multiple locations
+        $sysprepScriptPaths = @(
+            "C:\Scripts\run-sysprep.ps1",          # Downloaded location
+            (Join-Path $PSScriptRoot "run-sysprep.ps1"),  # Same directory as this script
+            ".\run-sysprep.ps1"                    # Current directory
+        )
+        
+        $sysprepScript = $null
+        foreach ($path in $sysprepScriptPaths) {
+            if (Test-Path $path) {
+                $sysprepScript = $path
+                Write-Log "Found sysprep script at: $sysprepScript"
+                break
+            }
+        }
+        
+        if ($sysprepScript) {
             Write-Log "Using comprehensive sysprep script: $sysprepScript"
-            PowerShell.exe -ExecutionPolicy Bypass -File $sysprepScript
+            try {
+                # Run the sysprep script with PowerShell
+                PowerShell.exe -ExecutionPolicy Bypass -File $sysprepScript
+            } catch {
+                Write-Log "Error running sysprep script: $($_.Exception.Message)" "ERROR"
+                Write-Log "Falling back to basic sysprep command" "WARNING"
+                Start-Sleep -Seconds 5
+                C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
+            }
         } else {
-            Write-Log "Sysprep script not found, using basic sysprep command" "WARNING"
+            Write-Log "Comprehensive sysprep script not found in any expected location" "WARNING"
+            Write-Log "Expected locations:" "INFO"
+            foreach ($path in $sysprepScriptPaths) {
+                Write-Log "  - $path" "INFO"
+            }
+            Write-Log "Using basic sysprep command instead" "WARNING"
             Start-Sleep -Seconds 5
             C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
         }
@@ -1070,7 +1286,7 @@ try {
         Write-Log "Template preparation completed successfully!" "SUCCESS"
         Write-Log "Next steps:" "INFO"
         Write-Log "  1. Test SSH connectivity: ssh Administrator@<VM_IP>" "INFO"
-        Write-Log "  2. Run Sysprep manually: .\run-sysprep.ps1" "INFO"
+        Write-Log "  2. Run Sysprep manually: .\run-sysprep.ps1 or C:\Scripts\run-sysprep.ps1" "INFO"
         Write-Log "  3. Shutdown VM after Sysprep completes" "INFO"
         Write-Log "  4. Convert VM to template in Proxmox VE" "INFO"
         Write-Log "  5. Test template by creating new VMs with cloud-init" "INFO"

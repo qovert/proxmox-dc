@@ -6,6 +6,7 @@
 .DESCRIPTION
     This script prepares a Windows Server template for cloning by running sysprep
     with appropriate settings to ensure proper boot and disk detection in cloned VMs.
+    Uses the unattend.xml template from the configs directory for consistent sysprep behavior.
     
 .PARAMETER Generalize
     Whether to generalize the installation (default: true)
@@ -20,6 +21,10 @@
 .EXAMPLE
     .\run-sysprep.ps1 -Generalize:$false -Shutdown:$false
     Run sysprep without generalizing and without shutdown
+    
+.EXAMPLE
+    .\run-sysprep.ps1 -UnattendPath "D:\custom-unattend.xml"
+    Run sysprep with a custom unattend.xml file
 #>
 
 param(
@@ -52,65 +57,35 @@ try {
     Write-Host "Operating System: $($osVersion.Caption)" -ForegroundColor Cyan
     Write-Host "Version: $($osVersion.Version)" -ForegroundColor Cyan
 
-    # Create unattend.xml for better cloning behavior
-    $unattendXml = @"
+    # Locate the unattend.xml template file
+    $repoRoot = Split-Path -Parent $PSScriptRoot
+    $sourceUnattendPath = Join-Path $repoRoot "configs\unattend.xml"
+    
+    if (-not (Test-Path $sourceUnattendPath)) {
+        Write-Warning "Unattend.xml template not found at: $sourceUnattendPath"
+        Write-Host "Creating basic unattend.xml..." -ForegroundColor Yellow
+        
+        # Fallback: create a minimal unattend.xml if template is missing
+        $basicUnattendXml = @"
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
     <settings pass="oobeSystem">
-        <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <InputLocale>en-US</InputLocale>
-            <SystemLocale>en-US</SystemLocale>
-            <UILanguage>en-US</UILanguage>
-            <UserLocale>en-US</UserLocale>
-        </component>
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>
-                <HideLocalAccountScreen>true</HideLocalAccountScreen>
-                <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
-                <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-                <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-                <NetworkLocation>Work</NetworkLocation>
-                <ProtectYourPC>1</ProtectYourPC>
                 <SkipUserOOBE>true</SkipUserOOBE>
                 <SkipMachineOOBE>true</SkipMachineOOBE>
             </OOBE>
-            <UserAccounts>
-                <AdministratorPassword>
-                    <Value>UgBlAHMAZQB0AEAAMQAyADMAIQBBAGQAbQBpAG4AaQBzAHQAcgBhAHQAbwByAFAAYQBzAHMAdwBvAHIAZAA=</Value>
-                    <PlainText>false</PlainText>
-                </AdministratorPassword>
-            </UserAccounts>
             <TimeZone>UTC</TimeZone>
-        </component>
-    </settings>
-    <settings pass="specialize">
-        <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <RunSynchronous>
-                <RunSynchronousCommand wcm:action="add">
-                    <Order>1</Order>
-                    <Path>cmd.exe /c "reg add HKLM\SYSTEM\CurrentControlSet\Control\StorageDevicePolicies /v WriteProtect /t REG_DWORD /d 0 /f"</Path>
-                </RunSynchronousCommand>
-                <RunSynchronousCommand wcm:action="add">
-                    <Order>2</Order>
-                    <Path>cmd.exe /c "sc config Disk start= boot"</Path>
-                </RunSynchronousCommand>
-                <RunSynchronousCommand wcm:action="add">
-                    <Order>3</Order>
-                    <Path>cmd.exe /c "sc config Fastfat start= auto"</Path>
-                </RunSynchronousCommand>
-            </RunSynchronous>
-        </component>
-        <component name="Microsoft-Windows-PnpCustomizationsNonWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <DriverPaths>
-                <PathAndCredentials wcm:action="add" wcm:keyValue="1">
-                    <Path>C:\Windows\System32\DriverStore\FileRepository</Path>
-                </PathAndCredentials>
-            </DriverPaths>
         </component>
     </settings>
 </unattend>
 "@
+        $basicUnattendXml | Out-File -FilePath $UnattendPath -Encoding UTF8 -Force
+        Write-Host "Created basic unattend.xml at: $UnattendPath" -ForegroundColor Green
+    } else {
+        Write-Host "Using unattend.xml template from: $sourceUnattendPath" -ForegroundColor Cyan
+    }
 
     # Ensure Scripts directory exists
     $scriptsDir = "C:\Scripts"
@@ -120,9 +95,13 @@ try {
     }
 
     # Write unattend.xml
-    Write-Host "Creating unattend.xml for sysprep..." -ForegroundColor Cyan
-    $unattendXml | Out-File -FilePath $UnattendPath -Encoding UTF8 -Force
-    Write-Host "Created: $UnattendPath" -ForegroundColor Green
+    if (Test-Path $sourceUnattendPath) {
+        Write-Host "Copying unattend.xml template to: $UnattendPath" -ForegroundColor Cyan
+        Copy-Item -Path $sourceUnattendPath -Destination $UnattendPath -Force
+        Write-Host "Copied unattend.xml from template" -ForegroundColor Green
+    } else {
+        Write-Host "Using generated basic unattend.xml" -ForegroundColor Green
+    }
 
     # Stop and disable Windows Search service to prevent issues
     Write-Host "Stopping Windows Search service..." -ForegroundColor Cyan
