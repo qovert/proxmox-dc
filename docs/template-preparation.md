@@ -59,6 +59,7 @@ Use the provided sysprep script to properly prepare the template:
 ```
 
 The sysprep script will:
+
 - Create an unattend.xml file for proper cloning
 - Configure storage device policies
 - Clear event logs and temporary files

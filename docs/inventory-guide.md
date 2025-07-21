@@ -5,11 +5,13 @@ This document explains how to configure the Ansible inventory for your Windows S
 ## Quick Start
 
 1. **Copy the minimal example:**
+
    ```bash
    cp ansible/inventory-minimal.yml.example ansible/inventory.yml
    ```
 
 2. **Edit the inventory file:**
+
    ```bash
    nano ansible/inventory.yml
    ```
@@ -23,11 +25,13 @@ This document explains how to configure the Ansible inventory for your Windows S
 ## Inventory Files
 
 ### `inventory-minimal.yml.example`
+
 - **Purpose**: Simplest possible configuration
 - **Use case**: Quick testing, single-domain deployments
 - **Features**: Basic 2-DC setup with minimal configuration
 
 ### `inventory.yml.example`
+
 - **Purpose**: Complete production-ready configuration
 - **Use case**: Full deployments with monitoring and multiple environments
 - **Features**: 
@@ -50,6 +54,7 @@ windows_domain_controllers:
 ```
 
 **Important Notes:**
+
 - First DC should have `dc_role: primary`
 - Additional DCs should have `dc_role: additional`  
 - VM IDs must be unique across your Proxmox cluster
@@ -66,6 +71,7 @@ vars:
 ```
 
 **Security Notes:**
+
 - Always use vault variables for passwords
 - Port 5985 is HTTP WinRM (use 5986 for HTTPS)
 - `ansible_winrm_server_cert_validation: ignore` disables cert checks
@@ -80,6 +86,7 @@ vars:
 ```
 
 **Domain Naming Guidelines:**
+
 - Use your organization's domain name
 - NetBIOS name should be short and descriptive
 - Avoid special characters in NetBIOS names
@@ -97,6 +104,7 @@ all:
 ```
 
 **Configuration Notes:**
+
 - Use HTTPS for Proxmox API URL
 - User should have VM create/modify permissions
 - Node name must match exactly
@@ -123,6 +131,7 @@ dns_servers:
 ```
 
 **During Deployment:**
+
 1. Initial setup uses public DNS
 2. After AD installation, DCs become DNS servers
 3. Client machines point to DC IPs for DNS
@@ -130,6 +139,7 @@ dns_servers:
 ## Environment-Specific Configurations
 
 ### Development Environment
+
 ```yaml
 dev:
   children:
@@ -142,6 +152,7 @@ dev:
 ```
 
 ### Production Environment
+
 ```yaml
 prod:
   children:
@@ -156,16 +167,19 @@ prod:
 ## Testing Your Inventory
 
 ### 1. Validate YAML syntax:
+
 ```bash
 ansible-inventory --list --yaml -i ansible/inventory.yml
 ```
 
 ### 2. Test connectivity:
+
 ```bash
 ansible windows_domain_controllers -i ansible/inventory.yml -m win_ping
 ```
 
 ### 3. Check variable resolution:
+
 ```bash
 ansible-inventory --host dc01 -i ansible/inventory.yml
 ```
@@ -173,6 +187,7 @@ ansible-inventory --host dc01 -i ansible/inventory.yml
 ## Common Issues and Solutions
 
 ### Connection Problems
+
 - **Issue**: `winrm or requests is not installed`
   - **Solution**: `pip3 install pywinrm requests-kerberos`
 
@@ -183,6 +198,7 @@ ansible-inventory --host dc01 -i ansible/inventory.yml
   - **Solution**: Verify vault passwords are correct
 
 ### Variable Problems
+
 - **Issue**: `vault_admin_password is undefined`
   - **Solution**: Ensure vault.yml is encrypted and loaded
 
@@ -190,6 +206,7 @@ ansible-inventory --host dc01 -i ansible/inventory.yml
   - **Solution**: Verify template name and ID in Proxmox
 
 ### Deployment Issues
+
 - **Issue**: `VM ID already exists`
   - **Solution**: Use unique VM IDs for each host
 

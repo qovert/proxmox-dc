@@ -5,15 +5,18 @@ This directory contains configuration files used by the Windows Server 2025 temp
 ## Files
 
 ### `sshd_config`
+
 **Purpose**: Main OpenSSH Server configuration for Windows Server 2025  
 **Usage**: Downloaded during SSH server setup in `prepare-windows-template.ps1`  
 **Features**:
+
 - Key-based authentication only (no passwords)
 - Separate authorized_keys file for administrators
 - Secure logging and connection settings
 - SFTP subsystem support
 
 ### `sshd_config_minimal`
+
 **Purpose**: Minimal fallback SSH configuration  
 **Usage**: Used as fallback if main SSH config fails validation  
 **Features**:
@@ -21,9 +24,11 @@ This directory contains configuration files used by the Windows Server 2025 temp
 - Used when `sshd -t` test fails on main config
 
 ### `cloudbase-init.conf`
+
 **Purpose**: CloudBase-Init configuration for cloud integration  
 **Usage**: Downloaded during CloudBase-Init setup in `prepare-windows-template.ps1`  
 **Features**:
+
 - Administrator user injection
 - Multiple config drive support (CD-ROM, raw HDD, VFAT)
 - Comprehensive logging
@@ -59,12 +64,14 @@ If GitHub downloads fail (no internet connectivity, repository issues, etc.), th
 ## Testing Configurations
 
 ### SSH Configuration Testing
+
 ```powershell
 # Test SSH configuration syntax
 C:\Windows\System32\OpenSSH\sshd.exe -t -f sshd_config
 ```
 
 ### CloudBase-Init Configuration Testing
+
 ```powershell
 # Validate CloudBase-Init configuration
 C:\Program Files\Cloudbase Solutions\Cloudbase-Init\Python\Scripts\cloudbase-init.exe --config-file cloudbase-init.conf --check-config

@@ -31,6 +31,7 @@ ansible/
 ```
 
 ### ✅ **Simplified Deployment**
+
 - ✅ Single tool approach with Ansible
 - ✅ No Terraform state management
 - ✅ Direct Proxmox API integration

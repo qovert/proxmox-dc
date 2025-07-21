@@ -7,21 +7,25 @@ The `prepare-windows-template.ps1` script has been enhanced with comprehensive P
 ## Getting Help
 
 ### Basic Help
+
 ```powershell
 Get-Help .\prepare-windows-template.ps1
 ```
 
 ### Detailed Help with Examples
+
 ```powershell
 Get-Help .\prepare-windows-template.ps1 -Full
 ```
 
 ### View Examples Only
+
 ```powershell
 Get-Help .\prepare-windows-template.ps1 -Examples
 ```
 
 ### Parameter-Specific Help
+
 ```powershell
 Get-Help .\prepare-windows-template.ps1 -Parameter SSHPublicKey
 ```
@@ -50,6 +54,7 @@ Get-Help .\prepare-windows-template.ps1 -Parameter SSHPublicKey
 ## Script Features
 
 ### Enhanced Documentation
+
 - ✅ Comprehensive synopsis and description
 - ✅ Detailed parameter documentation with validation
 - ✅ Multiple usage examples
@@ -58,6 +63,7 @@ Get-Help .\prepare-windows-template.ps1 -Parameter SSHPublicKey
 - ✅ SSH key file path support with cross-platform compatibility
 
 ### Improved Functions
+
 - ✅ All internal functions now have proper help documentation
 - ✅ Parameter validation and type checking
 - ✅ Enhanced error handling and logging
@@ -65,6 +71,7 @@ Get-Help .\prepare-windows-template.ps1 -Parameter SSHPublicKey
 - ✅ Administrator privilege checking
 
 ### Better User Experience
+
 - ✅ Colored output with timestamps
 - ✅ Parameter validation feedback
 - ✅ Clear progress indicators
@@ -89,6 +96,7 @@ Get-Help .\prepare-windows-template.ps1 -Parameter SSHPublicKey
 ## Error Handling
 
 The script now includes comprehensive error handling:
+
 - Clear error messages with context
 - Helpful guidance for common issues
 - Links to documentation and support
@@ -97,6 +105,7 @@ The script now includes comprehensive error handling:
 ## Function Documentation
 
 All internal functions now include proper PowerShell help:
+
 - `Write-Log` - Enhanced logging with levels
 - `Test-InternetConnection` - Connectivity testing
 - `Install-MsiPackage` - MSI installation helper

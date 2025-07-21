@@ -45,11 +45,6 @@
         boot: order=virtio0
         net:
           net0: "virtio,bridge={{ network_bridge }},ip={{ item.ip }}/{{ network_cidr_bits }},gw={{ gateway_ip }}"
-        # Disks are inherited from template when cloning
-        # scsi:
-        #   scsi0: "{{ storage_pool }}:{{ os_disk_size | regex_replace('G', '') }}"
-        #   scsi1: "{{ storage_pool }}:{{ data_disk_size | regex_replace('G', '') }}"
-        # Cloud-init configuration (requires cloud-init to be installed in template)
         ciuser: "{{ admin_username }}"
         cipassword: "{{ admin_password }}"
         sshkeys: "{{ ssh_public_key }}"
