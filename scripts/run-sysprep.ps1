@@ -117,15 +117,6 @@ try {
         Write-Host "Created Scripts directory: $scriptsDir" -ForegroundColor Yellow
     }
 
-    # Write unattend.xml
-    if ($sourceUnattendPath) {
-        Write-Host "Copying unattend.xml template to: $UnattendPath" -ForegroundColor Cyan
-        Copy-Item -Path $sourceUnattendPath -Destination $UnattendPath -Force
-        Write-Host "Copied unattend.xml from template: $sourceUnattendPath" -ForegroundColor Green
-    } else {
-        Write-Host "Using generated basic unattend.xml" -ForegroundColor Green
-    }
-
     # Stop and disable Windows Search service to prevent issues
     Write-Host "Stopping Windows Search service..." -ForegroundColor Cyan
     try {
