@@ -5,14 +5,14 @@
 - name: Cleanup Windows AD VMs
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   vars:
     # Proxmox Configuration
     proxmox_host: "{{ proxmox_api_url | regex_replace('https://') | regex_replace(':8006/api2/json') }}"
     proxmox_user: "{{ proxmox_user }}"
     proxmox_password: "{{ vault_proxmox_password }}"
     proxmox_node: "{{ proxmox_node }}"
-    
+
     # VM Configuration
     domain_controllers:
       - name: "{{ dc_name_prefix }}-01"
@@ -29,12 +29,17 @@
         vmid: "{{ item.vmid }}"
         state: stopped
         timeout: 300
-        validate_certs: no
+        validate_certs: false
       loop: "{{ domain_controllers }}"
-      ignore_errors: yes  # VM might already be stopped
+      failed_when:
+        - vm_stop.failed is defined
+        - vm_stop.failed
+        - "'does not exist' not in (vm_stop.msg | default(''))"
+        - "'already stopped' not in (vm_stop.msg | default(''))"
+      register: vm_stop
 
     - name: Wait for VMs to stop
-      pause:
+      ansible.builtin.pause:
         seconds: 10
 
     - name: Delete Domain Controller VMs
@@ -45,12 +50,12 @@
         vmid: "{{ item.vmid }}"
         state: absent
         timeout: 300
-        validate_certs: no
+        validate_certs: false
       loop: "{{ domain_controllers }}"
       register: vm_deletion
 
     - name: Display cleanup results
-      debug:
+      ansible.builtin.debug:
         msg: |
           🧹 Cleanup completed for VM {{ item.item.vmid }} ({{ item.item.name }})
           Status: {{ 'Deleted' if item.changed else 'Not found or already deleted' }}

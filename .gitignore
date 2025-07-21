@@ -4,6 +4,7 @@
 ansible/group_vars/vault.yml
 ansible/vault_pass.txt
 ansible/vault_pass
+ansible/inventory.yml
 
 # Ansible temporary files
 ansible/*.retry

@@ -22,20 +22,8 @@ windows_domain_controllers:
     ansible_port: 5985
     ansible_shell_type: powershell
     
-    # Domain settings - CHANGE THESE
-    domain_name: "corp.example.com"
-    domain_netbios_name: "CORP"
+    # Domain-specific password (if different from global setting)
     safe_mode_password: "{{ vault_dsrm_password }}"
 
-all:
-  vars:
-    # Proxmox settings - CHANGE THESE
-    proxmox_api_url: "https://YOUR-PROXMOX-HOST:8006/api2/json"
-    proxmox_user: "ansible@pve"
-    proxmox_password: "{{ vault_proxmox_password }}"
-    proxmox_node: "YOUR-NODE-NAME"
-    proxmox_tls_insecure: true
-    
-    # Template settings
-    template_name: "windows-server-2025-template"
-    template_id: 9000
+# Global variables are defined in group_vars/all.yml
+# Only host-specific and connection settings should remain here

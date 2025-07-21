@@ -42,7 +42,7 @@
     - { name: "RPC-Endpoint", port: "135", protocol: "tcp" }
 
 - name: Set time zone to UTC
-  community.windows.win_timezone:
+  ansible.windows.win_timezone:
     timezone: "UTC"
 
 - name: Configure NTP
@@ -67,16 +67,32 @@
       data: 1
       type: dword
 
-- name: Disable unnecessary services
+- name: Disable unnecessary services for Domain Controller
   ansible.windows.win_service:
     name: "{{ item }}"
     start_mode: disabled
   loop:
-    - Fax
-    - XblGameSave
-    - XblAuthManager
-    - XboxNetApiSvc
-  failed_when: false  # Services may not exist on all systems
+    - Spooler              # Print Spooler service
+    - WSearch              # Windows Search indexing
+    - TabletInputService   # Touch Keyboard and Handwriting Panel
+    # - TermService        # Uncomment if not using RDP access
+    - WerSvc              # Windows Error Reporting Service
+  failed_when: false
+
+- name: Set essential services to automatic start
+  ansible.windows.win_service:
+    name: "{{ item }}"
+    start_mode: auto
+    state: started
+  loop:
+    - W32Time             # Windows Time service (critical for AD)
+    - Netlogon            # Net Logon service (critical for AD)
+    - NTDS                # Active Directory Domain Services (will be installed later)
+    - DNS                 # DNS Server service (will be installed later)
+    - EventLog            # Windows Event Log
+    - LanmanServer        # Server service (file sharing)
+    - LanmanWorkstation   # Workstation service
+  failed_when: false
 
 - name: Install Windows Updates
   ansible.windows.win_updates:

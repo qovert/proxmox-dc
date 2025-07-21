@@ -10,70 +10,37 @@ windows_domain_controllers:
       ansible_host: 192.168.1.10
       vm_id: 200
       dc_role: primary
-      ansible_user: Administrator
-      ansible_password: "{{ vault_admin_password }}"
-      ansible_connection: winrm
-      ansible_winrm_server_cert_validation: ignore
-      ansible_winrm_transport: ntlm
-      ansible_port: 5985
       
     dc02:
       # Additional Domain Controller
       ansible_host: 192.168.1.11
       vm_id: 201
       dc_role: additional
-      ansible_user: Administrator
-      ansible_password: "{{ vault_admin_password }}"
-      ansible_connection: winrm
-      ansible_winrm_server_cert_validation: ignore
-      ansible_winrm_transport: ntlm
-      ansible_port: 5985
 
   vars:
-    # Common variables for all domain controllers
+    # Connection settings for domain controllers
+    ansible_user: Administrator
+    ansible_password: "{{ vault_admin_password }}"
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+    ansible_winrm_transport: ntlm
+    ansible_port: 5985
     ansible_shell_type: powershell
     ansible_winrm_read_timeout_sec: 60
     ansible_winrm_operation_timeout_sec: 59
     
-    # Active Directory Configuration
-    domain_name: "corp.example.com"
-    domain_netbios_name: "CORP"
-    domain_admin_user: "Administrator"
-    domain_admin_password: "{{ vault_admin_password }}"
+    # Domain-specific password (if different from global setting)
     safe_mode_password: "{{ vault_dsrm_password }}"
-    
-    # Forest Configuration
-    forest_mode: "WinThreshold"  # Windows Server 2016+ functional level
-    domain_mode: "WinThreshold"  # Windows Server 2016+ functional level
-    
-    # VM Configuration
-    proxmox_node: "proxmox-01"
-    template_id: 9000
-    template_name: "windows-server-2025-template"
-    cpu_cores: 4
-    cpu_sockets: 1
-    memory_mb: 8192
-    network_bridge: "vmbr0"
-    storage_pool: "local-lvm"
 
 # All Windows hosts (includes domain controllers)
 windows:
   children:
     windows_domain_controllers:
   vars:
-    # Global Windows connection settings
-    ansible_shell_type: powershell
-    ansible_connection: winrm
-    ansible_winrm_server_cert_validation: ignore
-    ansible_winrm_transport: ntlm
-    ansible_port: 5985
-    ansible_user: Administrator
-    ansible_password: "{{ vault_admin_password }}"
-    
-    # PowerShell execution policy
+    # Global Windows connection settings (if different from DC-specific settings)
     ansible_winrm_kinit_mode: managed
     
-    # Timezone and locale
+    # Timezone and locale (example of host-group specific variables)
     timezone: "Eastern Standard Time"
     locale: "en-US"
 
@@ -85,44 +52,29 @@ windows_member_servers:
     #   ansible_host: 192.168.1.20
     #   vm_id: 220
     #   server_role: fileserver
-    #   ansible_user: Administrator
-    #   ansible_password: "{{ vault_admin_password }}"
-    #   ansible_connection: winrm
-    #   ansible_winrm_server_cert_validation: ignore
-    #   ansible_port: 5985
   vars:
+    # Member server specific connection settings
+    ansible_user: Administrator
+    ansible_password: "{{ vault_admin_password }}"
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+    ansible_port: 5985
+    
     # Member server specific variables
     domain_join: true
-    domain_name: "corp.example.com"
-    domain_admin_user: "Administrator"
-    domain_admin_password: "{{ vault_admin_password }}"
 
 # All systems group
 all:
   vars:
-    # Global variables for all hosts
+    # Most global variables are defined in group_vars/all.yml
+    # Only put inventory-specific overrides here
     
-    # Proxmox API Configuration
-    proxmox_api_url: "https://proxmox.example.com:8006/api2/json"
-    proxmox_user: "ansible@pve"
-    proxmox_password: "{{ vault_proxmox_password }}"
-    proxmox_node: "proxmox-01"
-    proxmox_tls_insecure: true
+    # Example: Environment-specific network settings
+    # network_gateway: "192.168.1.1"
+    # network_cidr: "192.168.1.0/24"
     
-    # Network Configuration
-    network_gateway: "192.168.1.1"
-    network_cidr: "192.168.1.0/24"
-    dns_servers: 
-      - "1.1.1.1"
-      - "8.8.8.8"
-    
-    # SSH Configuration (if using SSH for template preparation)
-    ssh_public_key: "{{ vault_ssh_public_key }}"
-    
-    # Logging and monitoring
-    log_level: "INFO"
-    enable_monitoring: true
-    enable_health_checks: true
+    # Example: Custom logging level for this inventory
+    # log_level: "INFO"
 
 # Environment-specific configurations
 # Uncomment and modify for different environments
