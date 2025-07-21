@@ -158,15 +158,6 @@ try {
     }
     Write-Host "Temporary files cleaned" -ForegroundColor Green
 
-    # Run disk cleanup
-    Write-Host "Running disk cleanup..." -ForegroundColor Cyan
-    try {
-        Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:1" -Wait -NoNewWindow -ErrorAction SilentlyContinue
-        Write-Host "Disk cleanup completed" -ForegroundColor Green
-    } catch {
-        Write-Warning "Disk cleanup failed: $($_.Exception.Message)"
-    }
-
     # Prepare sysprep command
     $sysprepPath = "$env:WINDIR\System32\Sysprep\sysprep.exe"
     if (-not (Test-Path $sysprepPath)) {
